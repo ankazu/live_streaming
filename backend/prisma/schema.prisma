@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  broadcaster
+  viewer
+}
+
+enum AccountStatus {
+  active
+  pending
+  suspended
+}
+
+enum StreamStatus {
+  scheduled
+  live
+  ended
+}
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  email         String        @unique
+  passwordHash  String        @map("password_hash")
+  displayName   String        @map("display_name")
+  role          UserRole
+  accountStatus AccountStatus @default(active) @map("account_status")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  streams       Stream[]
+
+  @@map("users")
+}
+
+model Stream {
+  id            String       @id @default(uuid()) @db.Uuid
+  title         String
+  description   String       @default("")
+  status        StreamStatus @default(scheduled)
+  broadcasterId String       @db.Uuid @map("broadcaster_id")
+  viewerCount   Int          @default(0) @map("viewer_count")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  startedAt     DateTime?    @map("started_at")
+  endedAt       DateTime?    @map("ended_at")
+  broadcaster   User         @relation(fields: [broadcasterId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([broadcasterId])
+  @@map("streams")
+}
