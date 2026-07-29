@@ -15,7 +15,7 @@ const CHAT_RATE_LIMIT_WINDOW_MS = 10_000
 
 export function createSocketServer(httpServer: HttpServer, userRepository: UserRepository, streamRepository: StreamRepository) {
   const io = new Server(httpServer, {
-    cors: { origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173' },
+    cors: { origin: getSocketCorsOrigins() },
   })
   const presence = new Map<string, Map<string, Presence>>()
   const chatRateLimits = new Map<string, number[]>()
@@ -84,6 +84,11 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
       const streamPresence = presence.get(streamId)
       streamPresence?.delete(socket.id)
       if (streamPresence?.size === 0) presence.delete(streamId)
+      socket.to(roomName(streamId)).emit('stream:participant-left', {
+        userId: user.id,
+        displayName: user.displayName,
+        role: user.role,
+      })
       socket.to(roomName(streamId)).emit('presence:left', { userId: user.id })
       io.to(roomName(streamId)).emit('presence:count', { viewerCount: streamPresence?.size ?? 0 })
     }
@@ -104,6 +109,22 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
   })
 
   return io
+}
+
+export function notifyStreamEnded(io: Server, streamId: string) {
+  io.to(roomName(streamId)).emit('stream:ended', { streamId })
+}
+
+export function getSocketCorsOrigins(frontendOrigin = process.env.FRONTEND_ORIGIN) {
+  const configuredOrigins = frontendOrigin
+    ? frontendOrigin.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : ['http://localhost:5173', 'http://127.0.0.1:5173']
+  const localAliases = configuredOrigins.flatMap((origin) => {
+    if (origin === 'http://localhost:5173') return ['http://127.0.0.1:5173']
+    if (origin === 'http://127.0.0.1:5173') return ['http://localhost:5173']
+    return []
+  })
+  return [...new Set([...configuredOrigins, ...localAliases])]
 }
 
 function roomName(streamId: string) {

@@ -30,6 +30,8 @@ async function register(baseUrl: string, email: string, role: 'viewer' | 'broadc
 
 test('broadcaster can create, start, and end a stream', async () => {
   const userStore = new UserStore()
+  let endedStreamId: string | undefined
+  let streamId: string | undefined
   await withServer(async (baseUrl) => {
     const registered = await register(baseUrl, 'broadcaster@example.com', 'broadcaster')
     userStore.setAccountStatus(registered.user.id, 'active')
@@ -45,7 +47,7 @@ test('broadcaster can create, start, and end a stream', async () => {
     assert.equal(createResponse.status, 201)
     assert.equal(created.data.stream.status, 'scheduled')
 
-    const streamId = created.data.stream.id
+    streamId = created.data.stream.id
     const startResponse = await fetch(`${baseUrl}/api/streams/${streamId}/start`, { method: 'POST', headers })
     const started = await startResponse.json()
     assert.equal(startResponse.status, 200)
@@ -59,7 +61,8 @@ test('broadcaster can create, start, and end a stream', async () => {
 
     const listResponse = await fetch(`${baseUrl}/api/streams`)
     assert.deepEqual((await listResponse.json()).data.items, [])
-  }, createApp({ userStore }))
+  }, createApp({ userStore, onStreamEnded: (streamId) => (endedStreamId = streamId) }))
+  assert.equal(endedStreamId, streamId)
 })
 
 test('viewer cannot create a stream or manage another broadcaster stream', async () => {

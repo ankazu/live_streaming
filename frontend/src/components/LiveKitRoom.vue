@@ -1,27 +1,24 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
-import { io, type Socket } from 'socket.io-client'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Room, RoomEvent, Track, type Room as LiveKitRoomInstance } from 'livekit-client'
 
 import { getLiveKitToken } from '../api/livekit'
+import { localVideoPreviewStyle } from './livekit-layout'
 
-const props = defineProps<{ streamId: string; title: string }>()
+const props = withDefaults(
+  defineProps<{ streamId: string; title: string; autoConnect?: boolean }>(),
+  { autoConnect: false },
+)
 const room = ref<LiveKitRoomInstance>()
-const socket = ref<Socket>()
 const isConnecting = ref(false)
 const isConnected = ref(false)
-const isChatJoined = ref(false)
 const error = ref<string | null>(null)
-const videoContainer = ref<HTMLDivElement>()
+const remoteVideoContainer = ref<HTMLDivElement>()
+const localVideoContainer = ref<HTMLDivElement>()
 const audioContainer = ref<HTMLDivElement>()
-const chatInput = ref('')
-const presenceCount = ref(0)
-const messages = ref<Array<{ id: string; displayName: string; content: string }>>([])
-let heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
-function attachTrack(track: Track) {
+function attachTrack(track: Track, container: HTMLDivElement | undefined) {
   const element = track.attach()
-  const container = track.kind === Track.Kind.Video ? videoContainer.value : audioContainer.value
   container?.append(element)
 }
 
@@ -35,13 +32,21 @@ async function connect() {
   try {
     const access = await getLiveKitToken(props.streamId)
     const nextRoom = new Room()
-    nextRoom.on(RoomEvent.TrackSubscribed, (track) => attachTrack(track))
+    nextRoom.on(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === Track.Kind.Video) attachTrack(track, remoteVideoContainer.value)
+      else attachTrack(track, audioContainer.value)
+    })
     nextRoom.on(RoomEvent.TrackUnsubscribed, (track) => detachTrack(track))
     nextRoom.on(RoomEvent.LocalTrackPublished, (publication) => {
-      if (publication.track) attachTrack(publication.track)
+      if (publication.track) {
+        const container =
+          publication.track.kind === Track.Kind.Video
+            ? localVideoContainer.value
+            : audioContainer.value
+        attachTrack(publication.track, container)
+      }
     })
     nextRoom.on(RoomEvent.Disconnected, () => {
-      disconnectChat()
       isConnected.value = false
       room.value = undefined
     })
@@ -52,10 +57,9 @@ async function connect() {
 
     for (const participant of nextRoom.remoteParticipants.values()) {
       for (const publication of participant.trackPublications.values()) {
-        if (publication.track) attachTrack(publication.track)
+        if (publication.track) attachTrack(publication.track, remoteVideoContainer.value)
       }
     }
-    connectChat()
   } catch (requestError: unknown) {
     error.value = getErrorMessage(requestError)
   } finally {
@@ -63,68 +67,13 @@ async function connect() {
   }
 }
 
-function connectChat() {
-  const token = localStorage.getItem('live-streaming.access-token')
-  if (!token) return
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api'
-  const chatSocket = io(apiBaseUrl.replace(/\/api\/?$/, ''), { auth: { token } })
-  socket.value = chatSocket
-  chatSocket.on('connect', () => {
-    chatSocket.emit(
-      'stream:join',
-      props.streamId,
-      (result: { success: boolean; viewerCount?: number }) => {
-        if (result.success && result.viewerCount !== undefined) {
-          isChatJoined.value = true
-          presenceCount.value = result.viewerCount
-          return
-        }
-        error.value = '聊天室加入直播間失敗。'
-        disconnectChat()
-      },
-    )
-  })
-  chatSocket.on('chat:message', (message: { id: string; displayName: string; content: string }) => {
-    messages.value.push(message)
-  })
-  chatSocket.on(
-    'presence:count',
-    (data: { viewerCount: number }) => (presenceCount.value = data.viewerCount),
-  )
-  chatSocket.on('connect_error', () => (error.value = '聊天室暫時無法連線。'))
-  heartbeatTimer = setInterval(() => chatSocket.emit('presence:heartbeat'), 15_000)
-}
-
-function sendChatMessage() {
-  const content = chatInput.value.trim()
-  if (!content || !socket.value?.connected || !isChatJoined.value) return
-  socket.value.emit('chat:send', content, (result: { success: boolean; code?: string }) => {
-    if (!result.success) {
-      error.value = result.code === 'RATE_LIMITED' ? '留言太頻繁，請稍後再試。' : '留言未送出。'
-      return
-    }
-    chatInput.value = ''
-  })
-}
-
-function disconnectChat() {
-  if (heartbeatTimer) clearInterval(heartbeatTimer)
-  heartbeatTimer = undefined
-  socket.value?.emit('stream:leave')
-  socket.value?.disconnect()
-  socket.value = undefined
-  isChatJoined.value = false
-}
-
 function disconnect() {
-  disconnectChat()
   room.value?.disconnect()
-  videoContainer.value?.replaceChildren()
+  remoteVideoContainer.value?.replaceChildren()
+  localVideoContainer.value?.replaceChildren()
   audioContainer.value?.replaceChildren()
   room.value = undefined
   isConnected.value = false
-  messages.value = []
-  presenceCount.value = 0
 }
 
 function getErrorMessage(requestError: unknown) {
@@ -135,6 +84,9 @@ function getErrorMessage(requestError: unknown) {
   return '目前無法連線到直播，請稍後再試。'
 }
 
+onMounted(() => {
+  if (props.autoConnect) connect()
+})
 onUnmounted(disconnect)
 </script>
 
@@ -162,32 +114,15 @@ onUnmounted(disconnect)
       </button>
     </div>
     <p v-if="error" class="text-coral mt-3 text-sm">{{ error }}</p>
-    <div
-      ref="videoContainer"
-      class="mt-4 grid min-h-48 place-items-center overflow-hidden rounded-xl bg-black"
-    />
-    <div ref="audioContainer" class="sr-only" />
-    <div v-if="isConnected" class="mt-4 rounded-xl bg-white/10 p-4">
-      <div class="mb-3 flex items-center justify-between text-xs text-white/60">
-        <span>聊天室</span><span>{{ presenceCount }} 人在線</span>
-      </div>
-      <div class="mb-3 max-h-40 space-y-2 overflow-y-auto text-sm">
-        <p v-for="message in messages" :key="message.id">
-          <strong class="text-coral">{{ message.displayName }}</strong> {{ message.content }}
-        </p>
-        <p v-if="messages.length === 0" class="text-white/50">成為第一個留言的人。</p>
-      </div>
-      <form class="flex gap-2" @submit.prevent="sendChatMessage">
-        <input
-          v-model="chatInput"
-          class="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none placeholder:text-white/40"
-          maxlength="500"
-          placeholder="Say something…"
-        />
-        <button class="bg-coral rounded-full px-4 py-2 text-sm font-semibold" type="submit">
-          Send
-        </button>
-      </form>
+    <div class="relative mt-4 min-h-48 overflow-hidden rounded-xl bg-black">
+      <div ref="remoteVideoContainer" class="grid h-full min-h-48 w-full place-items-center" />
+      <div
+        ref="localVideoContainer"
+        class="absolute right-3 bottom-3 z-10 overflow-hidden rounded-lg border-2 border-white/80 bg-black shadow-lg [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
+        :style="localVideoPreviewStyle"
+        aria-label="自己的鏡頭預覽"
+      />
     </div>
+    <div ref="audioContainer" class="sr-only" />
   </section>
 </template>

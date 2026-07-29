@@ -7,7 +7,7 @@ import { io as createClient, type Socket } from 'socket.io-client'
 import { createApp } from '../src/app.js'
 import { createAccessToken } from '../src/auth/token.js'
 import { UserStore } from '../src/auth/store.js'
-import { createSocketServer } from '../src/socket/server.js'
+import { createSocketServer, getSocketCorsOrigins, notifyStreamEnded } from '../src/socket/server.js'
 import { StreamStore } from '../src/streams/store.js'
 
 function waitForConnect(socket: Socket) {
@@ -16,6 +16,13 @@ function waitForConnect(socket: Socket) {
     socket.once('connect_error', reject)
   })
 }
+
+test('socket CORS allows localhost aliases for local frontend development', () => {
+  assert.deepEqual(getSocketCorsOrigins('http://localhost:5173'), [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ])
+})
 
 test('authenticated clients can join a live stream and send chat messages', async () => {
   const users = new UserStore()
@@ -46,6 +53,51 @@ test('authenticated clients can join a live stream and send chat messages', asyn
     assert.equal(message.displayName, 'Viewer')
   } finally {
     client.disconnect()
+    socketServer.close()
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+  }
+})
+
+test('ending a stream notifies every participant in that stream', async () => {
+  const users = new UserStore()
+  const streams = new StreamStore()
+  const broadcaster = await users.create({ email: 'host@example.com', password: 'password123', displayName: 'Host', role: 'broadcaster' })
+  users.setAccountStatus(broadcaster.id, 'active')
+  const viewer = await users.create({ email: 'audience@example.com', password: 'password123', displayName: 'Audience', role: 'viewer' })
+  const stream = await streams.create({ title: 'Ending test', broadcasterId: broadcaster.id })
+  await streams.start(stream.id)
+  const httpServer = createServer(createApp({ userRepository: users, streamRepository: streams }))
+  const socketServer = createSocketServer(httpServer, users, streams)
+
+  await new Promise<void>((resolve) => httpServer.listen(0, resolve))
+  const address = httpServer.address()
+  assert.ok(address && typeof address !== 'string')
+  const broadcasterClient = createClient(`http://localhost:${address.port}`, { auth: { token: await createAccessToken(broadcaster.id) } })
+  const viewerClient = createClient(`http://localhost:${address.port}`, { auth: { token: await createAccessToken(viewer.id) } })
+
+  try {
+    await Promise.all([waitForConnect(broadcasterClient), waitForConnect(viewerClient)])
+    await Promise.all([
+      new Promise<void>((resolve) => broadcasterClient.emit('stream:join', stream.id, () => resolve())),
+      new Promise<void>((resolve) => viewerClient.emit('stream:join', stream.id, () => resolve())),
+    ])
+    const participantLeft = new Promise<{ userId: string; displayName: string; role: string }>((resolve) =>
+      broadcasterClient.once('stream:participant-left', resolve),
+    )
+    viewerClient.emit('stream:leave')
+    assert.deepEqual(await participantLeft, { userId: viewer.id, displayName: 'Audience', role: 'viewer' })
+
+    await new Promise<void>((resolve) => viewerClient.emit('stream:join', stream.id, () => resolve()))
+    const notifications = [broadcasterClient, viewerClient].map(
+      (client) => new Promise<{ streamId: string }>((resolve) => client.once('stream:ended', resolve)),
+    )
+
+    notifyStreamEnded(socketServer, stream.id)
+
+    assert.deepEqual(await Promise.all(notifications), [{ streamId: stream.id }, { streamId: stream.id }])
+  } finally {
+    broadcasterClient.disconnect()
+    viewerClient.disconnect()
     socketServer.close()
     await new Promise<void>((resolve) => httpServer.close(() => resolve()))
   }

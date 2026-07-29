@@ -28,7 +28,7 @@ async function register(baseUrl: string, email: string, role: 'viewer' | 'broadc
   return (await response.json()).data as { accessToken: string; user: { id: string } }
 }
 
-test('LiveKit token endpoint returns a short-lived viewer token when configured', async () => {
+test('LiveKit token endpoint returns a short-lived bidirectional token when configured', async () => {
   const userStore = new UserStore()
   const streamStore = new StreamStore()
   const app = createApp({
@@ -62,8 +62,9 @@ test('LiveKit token endpoint returns a short-lived viewer token when configured'
     assert.equal(tokenResponse.status, 200)
     assert.equal(body.data.url, 'wss://example.livekit.cloud')
     assert.equal(body.data.roomName, `stream-${stream.id}`)
-    assert.equal(body.data.canPublish, false)
-    assert.ok(body.data.token)
+    assert.equal(body.data.canPublish, true)
+    assert.equal(typeof body.data.token, 'string')
+    assert.equal(body.data.token.split('.').length, 3)
   }, app)
 })
 

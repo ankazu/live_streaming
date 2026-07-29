@@ -5,7 +5,11 @@ import type { UserRepository } from '../auth/repository.js'
 import type { StreamRepository } from './repository.js'
 import { canManageStream, StreamStore } from './store.js'
 
-export function createStreamRouter(userRepository: UserRepository, streamRepository: StreamRepository = new StreamStore()) {
+export function createStreamRouter(
+  userRepository: UserRepository,
+  streamRepository: StreamRepository = new StreamStore(),
+  options: { onStreamEnded?: (streamId: string) => void } = {},
+) {
   const router = Router()
 
   router.get('/', async (_request, response) => {
@@ -61,6 +65,7 @@ export function createStreamRouter(userRepository: UserRepository, streamReposit
 
     try {
       const updated = action === 'start' ? await streamRepository.start(stream.id) : await streamRepository.end(stream.id)
+      if (action === 'end') options.onStreamEnded?.(stream.id)
       response.json({ success: true, data: { stream: updated } })
     } catch (error) {
       if (error instanceof Error && error.message === 'INVALID_STREAM_STATUS') {

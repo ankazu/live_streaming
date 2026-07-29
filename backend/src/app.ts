@@ -10,7 +10,7 @@ import { StreamStore } from './streams/store.js'
 import { createLiveKitRouter } from './livekit/routes.js'
 import type { LiveKitConfig } from './livekit/service.js'
 
-export function createApp(dependencies: { userRepository?: UserRepository; streamRepository?: StreamRepository; userStore?: UserStore; streamStore?: StreamStore; liveKitConfig?: LiveKitConfig } = {}) {
+export function createApp(dependencies: { userRepository?: UserRepository; streamRepository?: StreamRepository; userStore?: UserStore; streamStore?: StreamStore; liveKitConfig?: LiveKitConfig; onStreamEnded?: (streamId: string) => void } = {}) {
   const app = express()
 
   app.use(cors())
@@ -21,7 +21,7 @@ export function createApp(dependencies: { userRepository?: UserRepository; strea
   app.use('/api/auth', auth.router)
 
   const streamRepository = dependencies.streamRepository ?? dependencies.streamStore ?? new StreamStore()
-  const streams = createStreamRouter(auth.userRepository, streamRepository)
+  const streams = createStreamRouter(auth.userRepository, streamRepository, { onStreamEnded: dependencies.onStreamEnded })
   app.use('/api/streams', streams.router)
   app.use('/api/livekit', createLiveKitRouter(auth.userRepository, streams.streamRepository, dependencies.liveKitConfig ?? {
     apiKey: process.env.LIVEKIT_API_KEY,

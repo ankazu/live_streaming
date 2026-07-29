@@ -1,50 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { ref } from 'vue'
 
-import { createStream, endStream, getStreams, startStream } from '../api/streams'
+import { createStream, startStream } from '../api/streams'
 import { useAuthStore } from '../stores/auth/store'
 import type { Stream } from '../types/stream'
+import { createAndStartStream } from './broadcaster-flow'
 
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ liveCreated: [stream: Stream] }>()
 const auth = useAuthStore()
 const title = ref('')
 const description = ref('')
-const streams = ref<Stream[]>([])
 const isLoading = ref(false)
 const error = ref<string | null>(null)
-
-const myStreams = computed(() =>
-  streams.value.filter((stream) => stream.broadcasterId === auth.user?.id),
-)
-
-async function refresh() {
-  streams.value = await getStreams()
-}
 
 async function submit() {
   isLoading.value = true
   error.value = null
   try {
-    await createStream({ title: title.value, description: description.value })
+    const stream = await createAndStartStream(
+      { title: title.value, description: description.value },
+      createStream,
+      startStream,
+    )
     title.value = ''
     description.value = ''
-    await refresh()
-    emit('changed')
-  } catch (requestError: unknown) {
-    error.value = getRequestMessage(requestError)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function updateStatus(stream: Stream, action: 'start' | 'end') {
-  isLoading.value = true
-  error.value = null
-  try {
-    if (action === 'start') await startStream(stream.id)
-    else await endStream(stream.id)
-    await refresh()
-    emit('changed')
+    emit('liveCreated', stream)
   } catch (requestError: unknown) {
     error.value = getRequestMessage(requestError)
   } finally {
@@ -59,14 +39,6 @@ function getRequestMessage(error: unknown) {
   }
   return '目前無法完成操作，請稍後再試。'
 }
-
-onMounted(async () => {
-  try {
-    await refresh()
-  } catch {
-    error.value = '目前無法載入你的直播。'
-  }
-})
 </script>
 
 <template>
@@ -105,33 +77,5 @@ onMounted(async () => {
       帳號通過審核後才能開始直播。
     </p>
     <p v-if="error" class="text-coral mt-3 text-sm">{{ error }}</p>
-    <div v-if="myStreams.length" class="mt-6 grid gap-3 sm:grid-cols-2">
-      <article
-        v-for="stream in myStreams"
-        :key="stream.id"
-        class="flex items-center justify-between rounded-xl bg-white/70 p-4"
-      >
-        <div>
-          <h3 class="text-ink font-semibold">{{ stream.title }}</h3>
-          <p class="text-muted text-xs">{{ stream.status }}</p>
-        </div>
-        <button
-          v-if="stream.status === 'scheduled'"
-          class="text-coral text-sm font-semibold"
-          :disabled="isLoading || auth.user.accountStatus !== 'active'"
-          @click="updateStatus(stream, 'start')"
-        >
-          Start
-        </button>
-        <button
-          v-else-if="stream.status === 'live'"
-          class="text-coral text-sm font-semibold"
-          :disabled="isLoading"
-          @click="updateStatus(stream, 'end')"
-        >
-          End
-        </button>
-      </article>
-    </div>
   </section>
 </template>

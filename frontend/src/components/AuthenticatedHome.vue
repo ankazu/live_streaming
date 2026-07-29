@@ -3,13 +3,27 @@ import { ref } from 'vue'
 
 import CameraPreview from './CameraPreview.vue'
 import BroadcasterStudio from './BroadcasterStudio.vue'
+import ChatWindow from './ChatWindow.vue'
+import LiveKitRoom from './LiveKitRoom.vue'
 import StreamGrid from './StreamGrid.vue'
 import SiteHeader from './SiteHeader.vue'
 import { useAuthStore } from '../stores/auth/store'
+import type { Stream } from '../types/stream'
 
 const emit = defineEmits<{ openAuth: [] }>()
 const auth = useAuthStore()
 const streamsRefreshKey = ref(0)
+const activeStream = ref<Stream | null>(null)
+
+function handleLiveCreated(stream: Stream) {
+  activeStream.value = stream
+  streamsRefreshKey.value += 1
+}
+
+function handleLiveEnded() {
+  activeStream.value = null
+  streamsRefreshKey.value += 1
+}
 </script>
 
 <template>
@@ -29,8 +43,20 @@ const streamsRefreshKey = ref(0)
       </div>
     </section>
     <section class="grid gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]">
-      <CameraPreview />
-      <aside class="rounded-3xl border border-[#e5e0da] bg-white/65 p-6">
+      <LiveKitRoom
+        v-if="activeStream"
+        :stream-id="activeStream.id"
+        :title="activeStream.title"
+        auto-connect
+      />
+      <CameraPreview v-else />
+      <ChatWindow
+        v-if="activeStream"
+        :stream-id="activeStream.id"
+        :title="activeStream.title"
+        @ended="handleLiveEnded"
+      />
+      <aside v-else class="rounded-3xl border border-[#e5e0da] bg-white/65 p-6">
         <p class="eyebrow">QUICK START</p>
         <h2 class="font-display text-ink mt-3 text-2xl font-semibold">三步開始你的直播</h2>
         <ol class="text-muted mt-6 grid gap-5 text-sm leading-6">
@@ -48,7 +74,7 @@ const streamsRefreshKey = ref(0)
         </div>
       </aside>
     </section>
-    <BroadcasterStudio @changed="streamsRefreshKey++" />
+    <BroadcasterStudio @live-created="handleLiveCreated" />
     <StreamGrid
       :is-authenticated="true"
       :refresh-key="streamsRefreshKey"
