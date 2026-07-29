@@ -7,5 +7,6 @@ backend/dist/
 .vscode/
 .env
 .DS_Store
-doc/
+doc/*
+!doc/socketio-presence-follow-ups.md
 AGENTS.md

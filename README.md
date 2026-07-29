@@ -1,6 +1,6 @@
 # live-streaming
 
-直播平台 MVP，包含前端頁面、使用者認證、直播生命週期管理，以及 LiveKit 串流房間基礎整合。
+直播平台 MVP，包含前端頁面、使用者認證、直播生命週期管理、LiveKit 串流房間，以及 Socket.IO 聊天與 presence 基礎整合。
 
 ## 使用技術
 
