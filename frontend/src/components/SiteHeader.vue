@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import { useAuthStore } from '../stores/auth/store'
 
+const props = withDefaults(defineProps<{ dashboard?: boolean }>(), { dashboard: false })
 const emit = defineEmits<{
   openAuth: [mode: 'login' | 'register']
   updateSearch: [query: string]
@@ -25,15 +26,15 @@ function toggleSearch() {
     <a class="font-display text-[28px] font-bold tracking-[-1.5px]" href="/"
       >live<span class="text-coral">.</span></a
     >
-    <nav class="text-muted hidden gap-8 text-sm md:flex">
+    <nav v-if="!props.dashboard" class="text-muted hidden gap-8 text-sm md:flex">
       <a class="text-ink font-semibold" href="/">Discover</a>
       <a href="#categories">Categories</a>
       <a href="#about">About</a>
     </nav>
     <div class="ml-auto flex items-center gap-4">
       <div
+        v-if="!props.dashboard"
         class="flex items-center rounded-full border border-[#ddd4cc] bg-white/60 px-3"
-        v-if="searchOpen"
       >
         <input
           v-model="searchQuery"
@@ -44,6 +45,7 @@ function toggleSearch() {
         />
       </div>
       <button
+        v-if="!props.dashboard"
         class="text-muted text-2xl"
         aria-label="搜尋"
         :aria-expanded="searchOpen"
