@@ -2,16 +2,13 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 
-import { endStream } from '../api/streams'
-
-const props = defineProps<{ streamId: string; title: string }>()
+const props = defineProps<{ streamId: string }>()
 const emit = defineEmits<{ ended: [] }>()
 
 type ChatMessage = { id: string; displayName: string; content: string }
 
 const socket = ref<Socket>()
 const isJoined = ref(false)
-const isEnding = ref(false)
 const error = ref<string | null>(null)
 const chatInput = ref('')
 const presenceCount = ref(0)
@@ -76,19 +73,6 @@ function sendMessage() {
   })
 }
 
-async function finishStream() {
-  isEnding.value = true
-  error.value = null
-  try {
-    await endStream(props.streamId)
-    emit('ended')
-  } catch {
-    error.value = '目前無法結束直播，請稍後再試。'
-  } finally {
-    isEnding.value = false
-  }
-}
-
 function disconnect() {
   if (heartbeatTimer) clearInterval(heartbeatTimer)
   heartbeatTimer = undefined
@@ -103,12 +87,9 @@ onUnmounted(disconnect)
 </script>
 
 <template>
-  <aside class="bg-ink flex min-h-[360px] flex-col rounded-3xl p-5 text-white sm:p-6">
+  <aside class="bg-ink flex min-h-0 flex-1 flex-col rounded-3xl p-5 text-white sm:p-6">
     <div class="flex items-start justify-between gap-3">
-      <div>
-        <p class="eyebrow text-white/60">LIVE CHAT</p>
-        <h2 class="mt-2 text-xl font-semibold">{{ title }}</h2>
-      </div>
+      <p class="eyebrow text-white/60">LIVE CHAT</p>
       <span class="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
         {{ presenceCount }} 人在線
       </span>
@@ -125,18 +106,11 @@ onUnmounted(disconnect)
         v-model="chatInput"
         class="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none placeholder:text-white/40"
         maxlength="500"
-        placeholder="Say something…"
+        placeholder="說點什麼…"
       />
       <button class="bg-coral rounded-full px-4 py-2 text-sm font-semibold" type="submit">
-        Send
+        發送
       </button>
     </form>
-    <button
-      class="mt-4 self-start text-sm font-semibold text-white/60 hover:text-white disabled:opacity-50"
-      :disabled="isEnding"
-      @click="finishStream"
-    >
-      {{ isEnding ? '結束中…' : '結束直播' }}
-    </button>
   </aside>
 </template>

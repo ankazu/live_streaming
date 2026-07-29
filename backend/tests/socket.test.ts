@@ -133,6 +133,7 @@ test('stream join failures return an acknowledgement and do not enter the chat r
     findById: async () => {
       throw new Error('repository unavailable')
     },
+    findByJoinCode: streams.findByJoinCode.bind(streams),
     start: streams.start.bind(streams),
     end: streams.end.bind(streams),
   }

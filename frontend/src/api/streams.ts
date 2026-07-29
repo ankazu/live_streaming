@@ -7,13 +7,18 @@ interface ApiEnvelope<T> {
 }
 
 export interface CreateStreamInput {
-  title: string
+  title?: string
   description?: string
 }
 
 export async function getStreams() {
   const response = await apiClient.get<ApiEnvelope<{ items: Stream[] }>>('/streams')
   return response.data.data.items
+}
+
+export async function getStreamByJoinCode(joinCode: string) {
+  const response = await apiClient.get<ApiEnvelope<{ stream: Stream }>>(`/streams/code/${joinCode}`)
+  return response.data.data.stream
 }
 
 export async function createStream(input: CreateStreamInput) {

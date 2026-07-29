@@ -5,6 +5,7 @@ import type { Stream } from '../types/stream'
 
 const scheduledStream: Stream = {
   id: 'stream-1',
+  joinCode: '482731',
   title: '測試直播',
   description: '測試簡介',
   status: 'scheduled',
@@ -24,11 +25,9 @@ describe('broadcaster live flow', () => {
     const create = vi.fn().mockResolvedValue(scheduledStream)
     const start = vi.fn().mockResolvedValue(liveStream)
 
-    await expect(
-      createAndStartStream({ title: '測試直播', description: '測試簡介' }, create, start),
-    ).resolves.toEqual(liveStream)
+    await expect(createAndStartStream({}, create, start)).resolves.toEqual(liveStream)
 
-    expect(create).toHaveBeenCalledWith({ title: '測試直播', description: '測試簡介' })
+    expect(create).toHaveBeenCalledWith({})
     expect(start).toHaveBeenCalledWith('stream-1')
   })
 })

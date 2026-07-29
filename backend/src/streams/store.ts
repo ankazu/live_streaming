@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 
 import type { UserRole } from '../auth/store.js'
 import type { StreamRepository } from './repository.js'
@@ -7,6 +7,7 @@ export type StreamStatus = 'scheduled' | 'live' | 'ended'
 
 export interface StreamRecord {
   id: string
+  joinCode: string
   title: string
   description: string
   status: StreamStatus
@@ -23,6 +24,7 @@ export class StreamStore implements StreamRepository {
   async create(input: { title: string; description?: string; broadcasterId: string }) {
     const stream: StreamRecord = {
       id: randomUUID(),
+      joinCode: this.createJoinCode(),
       title: input.title.trim(),
       description: input.description?.trim() ?? '',
       status: 'scheduled',
@@ -43,6 +45,10 @@ export class StreamStore implements StreamRepository {
     return this.streams.get(id)
   }
 
+  async findByJoinCode(joinCode: string) {
+    return [...this.streams.values()].find((stream) => stream.joinCode === joinCode)
+  }
+
   async start(id: string) {
     const stream = await this.requireStream(id)
     if (stream.status !== 'scheduled') throw new Error('INVALID_STREAM_STATUS')
@@ -59,6 +65,14 @@ export class StreamStore implements StreamRepository {
     stream.status = 'ended'
     stream.endedAt = new Date().toISOString()
     return stream
+  }
+
+  private createJoinCode() {
+    let joinCode = ''
+    do {
+      joinCode = String(randomInt(100000, 1000000))
+    } while ([...this.streams.values()].some((stream) => stream.joinCode === joinCode))
+    return joinCode
   }
 
   private async requireStream(id: string) {

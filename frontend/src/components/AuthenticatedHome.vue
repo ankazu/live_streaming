@@ -1,28 +1,37 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-import CameraPreview from './CameraPreview.vue'
 import BroadcasterStudio from './BroadcasterStudio.vue'
+import CameraPreview from './CameraPreview.vue'
 import ChatWindow from './ChatWindow.vue'
+import JoinStreamForm from './JoinStreamForm.vue'
 import LiveKitRoom from './LiveKitRoom.vue'
-import StreamGrid from './StreamGrid.vue'
 import SiteHeader from './SiteHeader.vue'
 import { useAuthStore } from '../stores/auth/store'
 import type { Stream } from '../types/stream'
 
-const emit = defineEmits<{ openAuth: [] }>()
 const auth = useAuthStore()
-const streamsRefreshKey = ref(0)
 const activeStream = ref<Stream | null>(null)
+const viewerStream = ref<Stream | null>(null)
+const currentStream = computed(() => activeStream.value ?? viewerStream.value)
 
 function handleLiveCreated(stream: Stream) {
   activeStream.value = stream
-  streamsRefreshKey.value += 1
+  viewerStream.value = null
 }
 
 function handleLiveEnded() {
   activeStream.value = null
-  streamsRefreshKey.value += 1
+  viewerStream.value = null
+}
+
+function handleWatchLive(stream: Stream) {
+  viewerStream.value = stream
+}
+
+function handleLiveLeft() {
+  activeStream.value = null
+  viewerStream.value = null
 }
 </script>
 
@@ -42,43 +51,48 @@ function handleLiveEnded() {
         </div>
       </div>
     </section>
-    <section class="grid gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]">
+
+    <section
+      data-testid="workspace-grid"
+      class="grid items-stretch gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]"
+    >
       <LiveKitRoom
-        v-if="activeStream"
-        :stream-id="activeStream.id"
-        :title="activeStream.title"
-        auto-connect
+        v-if="currentStream"
+        :key="`live-room-${currentStream.id}`"
+        :stream-id="currentStream.id"
+        :join-code="activeStream?.joinCode"
+        :auto-connect="Boolean(activeStream || viewerStream)"
+        @left="handleLiveLeft"
       />
       <CameraPreview v-else />
-      <ChatWindow
-        v-if="activeStream"
-        :stream-id="activeStream.id"
-        :title="activeStream.title"
-        @ended="handleLiveEnded"
-      />
-      <aside v-else class="rounded-3xl border border-[#e5e0da] bg-white/65 p-6">
-        <p class="eyebrow">QUICK START</p>
-        <h2 class="font-display text-ink mt-3 text-2xl font-semibold">三步開始你的直播</h2>
-        <ol class="text-muted mt-6 grid gap-5 text-sm leading-6">
-          <li><strong class="text-ink">01</strong><br />開啟鏡頭，確認畫面與光線。</li>
-          <li>
-            <strong class="text-ink">02</strong><br />建立直播標題，讓觀眾知道你正在分享什麼。
-          </li>
-          <li><strong class="text-ink">03</strong><br />開始直播，進入即時互動。</li>
-        </ol>
-        <div class="mt-8 rounded-2xl bg-[#f7f4ef] p-4 text-sm">
-          <span class="text-coral font-semibold">{{
-            auth.user?.role === 'broadcaster' ? 'BROADCASTER' : 'VIEWER'
-          }}</span>
-          <p class="text-muted mt-1">你的登入狀態已準備完成。</p>
-        </div>
-      </aside>
+
+      <div data-testid="workspace-right" class="flex h-full min-h-0 flex-col gap-6">
+        <BroadcasterStudio
+          v-if="auth.user?.role === 'broadcaster' && !activeStream"
+          :active-stream="activeStream"
+          @live-created="handleLiveCreated"
+        />
+        <ChatWindow
+          v-if="currentStream"
+          :key="`chat-${currentStream.id}`"
+          :stream-id="currentStream.id"
+          @ended="handleLiveEnded"
+        />
+        <JoinStreamForm
+          v-else-if="auth.user?.role !== 'broadcaster'"
+          @watch-live="handleWatchLive"
+        />
+      </div>
     </section>
-    <BroadcasterStudio @live-created="handleLiveCreated" />
-    <StreamGrid
-      :is-authenticated="true"
-      :refresh-key="streamsRefreshKey"
-      @open-auth="emit('openAuth')"
-    />
+
+    <section class="border-t border-[#e5e0da] py-10 pb-20">
+      <p class="eyebrow">QUICK START</p>
+      <h2 class="font-display text-ink mt-3 text-3xl font-semibold">三步開始你的直播</h2>
+      <div class="text-muted mt-6 grid gap-5 text-sm leading-6 sm:grid-cols-3">
+        <p><strong class="text-ink">01</strong><br />開啟鏡頭，確認畫面與光線。</p>
+        <p><strong class="text-ink">02</strong><br />主播開始直播，取得 6 位數直播代碼。</p>
+        <p><strong class="text-ink">03</strong><br />觀眾輸入代碼，進入即時互動。</p>
+      </div>
+    </section>
   </main>
 </template>

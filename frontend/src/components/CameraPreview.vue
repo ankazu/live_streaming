@@ -2,12 +2,14 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 
 const video = ref<HTMLVideoElement | null>(null)
-const mediaStream = ref<MediaStream | null>(null)
-const isStarting = ref(false)
+const cameraStream = ref<MediaStream | null>(null)
+const microphoneStream = ref<MediaStream | null>(null)
+const isCameraStarting = ref(false)
+const isMicrophoneStarting = ref(false)
 const error = ref<string | null>(null)
 
 async function toggleCamera() {
-  if (mediaStream.value) {
+  if (cameraStream.value) {
     stopCamera()
     return
   }
@@ -17,26 +19,59 @@ async function toggleCamera() {
     return
   }
 
-  isStarting.value = true
+  isCameraStarting.value = true
   error.value = null
   try {
-    mediaStream.value = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    cameraStream.value = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
     await nextTick()
-    if (video.value) video.value.srcObject = mediaStream.value
+    if (video.value) video.value.srcObject = cameraStream.value
   } catch {
     error.value = '無法取得鏡頭權限，請允許瀏覽器使用攝影機。'
   } finally {
-    isStarting.value = false
+    isCameraStarting.value = false
+  }
+}
+
+async function toggleMicrophone() {
+  if (microphoneStream.value) {
+    stopMicrophone()
+    return
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    error.value = '目前瀏覽器不支援麥克風。'
+    return
+  }
+
+  isMicrophoneStarting.value = true
+  error.value = null
+  try {
+    microphoneStream.value = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: true,
+    })
+  } catch {
+    error.value = '無法取得麥克風權限，請允許瀏覽器使用麥克風。'
+  } finally {
+    isMicrophoneStarting.value = false
   }
 }
 
 function stopCamera() {
-  mediaStream.value?.getTracks().forEach((track) => track.stop())
-  mediaStream.value = null
+  cameraStream.value?.getTracks().forEach((track) => track.stop())
+  cameraStream.value = null
   if (video.value) video.value.srcObject = null
 }
 
-onBeforeUnmount(stopCamera)
+function stopMicrophone() {
+  microphoneStream.value?.getTracks().forEach((track) => track.stop())
+  microphoneStream.value = null
+}
+
+onBeforeUnmount(() => {
+  stopCamera()
+  stopMicrophone()
+})
 </script>
 
 <template>
@@ -46,12 +81,12 @@ onBeforeUnmount(stopCamera)
         <p class="eyebrow text-white/60">CAMERA PREVIEW</p>
       </div>
       <span class="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
-        {{ mediaStream ? '鏡頭已開啟' : '尚未開啟' }}
+        {{ cameraStream || microphoneStream ? '設備已開啟' : '尚未開啟' }}
       </span>
     </div>
     <div class="relative aspect-video overflow-hidden rounded-2xl bg-[#17141f]">
       <video
-        v-if="mediaStream"
+        v-if="cameraStream"
         ref="video"
         class="h-full w-full object-cover"
         autoplay
@@ -67,12 +102,53 @@ onBeforeUnmount(stopCamera)
       </div>
     </div>
     <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
-    <button
-      class="bg-coral mt-5 rounded-full px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-      :disabled="isStarting"
-      @click="toggleCamera"
-    >
-      {{ isStarting ? '正在啟動…' : mediaStream ? '關閉鏡頭' : '開啟鏡頭預覽' }}
-    </button>
+    <div class="mt-5 flex flex-wrap gap-3">
+      <button
+        data-testid="toggle-camera"
+        class="bg-coral rounded-full p-3 text-white disabled:opacity-60"
+        :disabled="isCameraStarting"
+        :aria-label="isCameraStarting ? '正在啟動鏡頭' : cameraStream ? '關閉鏡頭' : '開啟鏡頭預覽'"
+        :title="isCameraStarting ? '正在啟動鏡頭' : cameraStream ? '關閉鏡頭' : '開啟鏡頭預覽'"
+        @click="toggleCamera"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          class="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="M4 7h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+          <path d="m17 10 5-3v10l-5-3z" />
+          <path v-if="!cameraStream" d="m3 3 18 18" />
+        </svg>
+      </button>
+      <button
+        data-testid="toggle-microphone"
+        class="rounded-full border border-white/20 bg-white/10 p-3 text-white disabled:opacity-60"
+        :disabled="isMicrophoneStarting"
+        :aria-label="
+          isMicrophoneStarting ? '正在啟動麥克風' : microphoneStream ? '關閉麥克風' : '開啟麥克風'
+        "
+        :title="
+          isMicrophoneStarting ? '正在啟動麥克風' : microphoneStream ? '關閉麥克風' : '開啟麥克風'
+        "
+        @click="toggleMicrophone"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          class="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <rect x="8" y="3" width="8" height="12" rx="4" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
+          <path v-if="!microphoneStream" d="m3 3 18 18" />
+        </svg>
+      </button>
+    </div>
   </section>
 </template>

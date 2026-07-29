@@ -1,4 +1,6 @@
-import { PrismaClient } from '@prisma/client'
+import { randomInt } from 'node:crypto'
+
+import { Prisma, PrismaClient } from '@prisma/client'
 
 import type { StreamRecord, StreamStatus } from './store.js'
 import type { StreamRepository } from './repository.js'
@@ -7,14 +9,22 @@ export class PrismaStreamRepository implements StreamRepository {
   constructor(private readonly db: PrismaClient) {}
 
   async create(input: { title: string; description?: string; broadcasterId: string }) {
-    const stream = await this.db.stream.create({
-      data: {
-        title: input.title.trim(),
-        description: input.description?.trim() ?? '',
-        broadcasterId: input.broadcasterId,
-      },
-    })
-    return toStreamRecord(stream)
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const stream = await this.db.stream.create({
+          data: {
+            joinCode: this.createJoinCode(),
+            title: input.title.trim(),
+            description: input.description?.trim() ?? '',
+            broadcasterId: input.broadcasterId,
+          },
+        })
+        return toStreamRecord(stream)
+      } catch (error) {
+        if (!isJoinCodeCollision(error) || attempt === 4) throw error
+      }
+    }
+    throw new Error('JOIN_CODE_GENERATION_FAILED')
   }
 
   async list() {
@@ -27,6 +37,11 @@ export class PrismaStreamRepository implements StreamRepository {
 
   async findById(id: string) {
     const stream = await this.db.stream.findUnique({ where: { id } })
+    return stream ? toStreamRecord(stream) : undefined
+  }
+
+  async findByJoinCode(joinCode: string) {
+    const stream = await this.db.stream.findUnique({ where: { joinCode } })
     return stream ? toStreamRecord(stream) : undefined
   }
 
@@ -52,6 +67,10 @@ export class PrismaStreamRepository implements StreamRepository {
     return toStreamRecord(updated)
   }
 
+  private createJoinCode() {
+    return String(randomInt(100000, 1000000))
+  }
+
   private async requireStream(id: string) {
     const stream = await this.findById(id)
     if (!stream) throw new Error('STREAM_NOT_FOUND')
@@ -59,8 +78,13 @@ export class PrismaStreamRepository implements StreamRepository {
   }
 }
 
+function isJoinCodeCollision(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+}
+
 function toStreamRecord(stream: {
   id: string
+  joinCode: string
   title: string
   description: string
   status: string
@@ -72,6 +96,7 @@ function toStreamRecord(stream: {
 }): StreamRecord {
   return {
     id: stream.id,
+    joinCode: stream.joinCode,
     title: stream.title,
     description: stream.description,
     status: stream.status as StreamStatus,
