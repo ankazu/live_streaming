@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 
 import { createStream, startStream } from '../api/streams'
+import { useToast } from '../composables/useToast'
 import { useAuthStore } from '../stores/auth/store'
 import type { Stream } from '../types/stream'
 import { createAndStartStream } from '../lib/broadcaster-flow'
@@ -10,16 +11,15 @@ const props = defineProps<{ activeStream?: Stream | null }>()
 const emit = defineEmits<{ liveCreated: [stream: Stream] }>()
 const auth = useAuthStore()
 const isLoading = ref(false)
-const error = ref<string | null>(null)
+const { showToast } = useToast()
 
 async function submit() {
   isLoading.value = true
-  error.value = null
   try {
     const stream = await createAndStartStream({}, createStream, startStream)
     emit('liveCreated', stream)
   } catch (requestError: unknown) {
-    error.value = getRequestMessage(requestError)
+    showToast(getRequestMessage(requestError), 'error')
   } finally {
     isLoading.value = false
   }
@@ -75,6 +75,5 @@ function getRequestMessage(error: unknown) {
     <p v-if="auth.user?.accountStatus === 'suspended'" class="text-muted mt-3 text-sm">
       帳號目前無法開始直播。
     </p>
-    <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
   </section>
 </template>

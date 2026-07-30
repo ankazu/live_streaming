@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 
+import { useToast } from '../composables/useToast'
+
 const props = defineProps<{ streamId: string; userId?: string; canModerate?: boolean }>()
 const emit = defineEmits<{
   ended: []
@@ -16,7 +18,6 @@ type Participant = { userId: string; displayName: string; role: 'host' | 'viewer
 
 const socket = ref<Socket>()
 const isJoined = ref(false)
-const error = ref<string | null>(null)
 const chatInput = ref('')
 const presenceCount = ref(0)
 const messages = ref<ChatMessage[]>([])
@@ -27,12 +28,13 @@ const requestPending = ref(false)
 const hasPendingStageRequest = ref(false)
 const stageParticipantId = ref(props.userId)
 const isChatReady = computed(() => Boolean(socket.value?.connected && isJoined.value))
+const { showToast } = useToast()
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
 function connectChat() {
   const token = localStorage.getItem('live-streaming.access-token')
   if (!token) {
-    error.value = '登入狀態已失效，無法開啟聊天室。'
+    showToast('登入狀態已失效，無法開啟聊天室。', 'error')
     return
   }
 
@@ -50,7 +52,7 @@ function connectChat() {
           emit('chatReady', true)
           return
         }
-        error.value = '聊天室加入直播間失敗。'
+        showToast('聊天室加入直播間失敗。', 'error')
         disconnect()
       },
     )
@@ -86,14 +88,14 @@ function connectChat() {
     pendingRequests.value = pendingRequests.value.filter((item) => item.id !== request.id)
     if (request.userId === props.userId) {
       hasPendingStageRequest.value = false
-      error.value = '主播已拒絕你的上台申請。'
+      showToast('主播已拒絕你的上台申請。', 'error')
     }
   })
   chatSocket.on('participant:removed', (participant: Participant) => {
     guests.value = guests.value.filter((guest) => guest.userId !== participant.userId)
     if (participant.userId === props.userId) {
       participantRole.value = 'viewer'
-      error.value = '你已回到觀眾席。'
+      showToast('你已回到觀眾席。', 'info')
       emit('roleChanged', 'viewer')
     }
   })
@@ -103,20 +105,20 @@ function connectChat() {
   })
   chatSocket.on('stream:ended', ({ streamId }: { streamId: string }) => {
     if (streamId !== props.streamId) return
-    error.value = '直播已結束。'
+    showToast('直播已結束。', 'info')
     disconnect()
     emit('ended')
   })
   chatSocket.on(
     'stream:participant-left',
     ({ displayName, role }: { displayName: string; role: string }) => {
-      if (role === 'viewer') error.value = `${displayName} 已離開直播。`
+      if (role === 'viewer') showToast(`${displayName} 已離開直播。`, 'info')
     },
   )
   chatSocket.on('presence:count', (data: { viewerCount: number }) => {
     presenceCount.value = data.viewerCount
   })
-  chatSocket.on('connect_error', () => (error.value = '聊天室暫時無法連線。'))
+  chatSocket.on('connect_error', () => showToast('聊天室暫時無法連線。', 'error'))
   heartbeatTimer = setInterval(() => chatSocket.emit('presence:heartbeat'), 15_000)
 }
 
@@ -126,7 +128,10 @@ function sendMessage() {
 
   socket.value.emit('chat:send', content, (result: { success: boolean; code?: string }) => {
     if (!result.success) {
-      error.value = result.code === 'RATE_LIMITED' ? '留言太頻繁，請稍後再試。' : '留言未送出。'
+      showToast(
+        result.code === 'RATE_LIMITED' ? '留言太頻繁，請稍後再試。' : '留言未送出。',
+        'error',
+      )
       return
     }
     chatInput.value = ''
@@ -135,7 +140,7 @@ function sendMessage() {
 
 function requestToJoin() {
   if (!socket.value?.connected || !isJoined.value) {
-    error.value = '聊天室仍在連線中，請稍候再試。'
+    showToast('聊天室仍在連線中，請稍候再試。', 'error')
     return
   }
   if (requestPending.value || hasPendingStageRequest.value) return
@@ -145,30 +150,33 @@ function requestToJoin() {
     if (result.success || result.code === 'REQUEST_ALREADY_PENDING') {
       hasPendingStageRequest.value = true
     }
-    error.value = result.success
-      ? '已送出上台申請，等待主播同意。'
-      : result.code === 'REQUEST_ALREADY_PENDING'
-        ? '你已經送出過申請。'
-        : '目前無法申請上台。'
+    showToast(
+      result.success
+        ? '申請中，等待主播同意。'
+        : result.code === 'REQUEST_ALREADY_PENDING'
+          ? '你已經送出過申請，請等待主播同意。'
+          : '目前無法申請上台。',
+      result.success || result.code === 'REQUEST_ALREADY_PENDING' ? 'info' : 'error',
+    )
   })
 }
 
 function moderate(event: 'participant:approve' | 'participant:reject', requestId: string) {
   socket.value?.emit(event, requestId, (result: { success: boolean }) => {
-    if (!result.success) error.value = '目前無法處理上台申請。'
+    if (!result.success) showToast('目前無法處理上台申請。', 'error')
   })
 }
 
 function removeGuest(userId: string) {
   socket.value?.emit('participant:remove', userId, (result: { success: boolean }) => {
-    if (!result.success) error.value = '目前無法移除來賓。'
+    if (!result.success) showToast('目前無法移除來賓。', 'error')
   })
 }
 
 function changeStage(participantId: string) {
   socket.value?.emit('stage:change', participantId, (result: { success: boolean }) => {
     if (!result.success) {
-      error.value = '目前無法切換舞台畫面。'
+      showToast('目前無法切換舞台畫面。', 'error')
       return
     }
     stageParticipantId.value = participantId
@@ -178,7 +186,7 @@ function changeStage(participantId: string) {
 
 function leaveStage() {
   socket.value?.emit('participant:leave-stage', (result: { success: boolean }) => {
-    if (!result.success) error.value = '目前無法下舞台，請稍後再試。'
+    if (!result.success) showToast('目前無法下舞台，請稍後再試。', 'error')
   })
 }
 
@@ -213,7 +221,7 @@ onUnmounted(disconnect)
         {{ presenceCount }} 人在線
       </span>
     </div>
-    <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
+
     <div
       v-if="props.canModerate && pendingRequests.length"
       class="mt-4 space-y-2 rounded-2xl bg-white/5 p-3"

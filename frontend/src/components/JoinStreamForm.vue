@@ -2,27 +2,27 @@
 import { ref } from 'vue'
 
 import { getStreamByJoinCode } from '../api/streams'
+import { useToast } from '../composables/useToast'
 import type { Stream } from '../types/stream'
 
 const emit = defineEmits<{ watchLive: [stream: Stream] }>()
 const joinCode = ref('')
 const isLoading = ref(false)
-const error = ref<string | null>(null)
+const { showToast } = useToast()
 
 async function submit() {
   const code = joinCode.value.trim()
   if (!/^\d{6}$/.test(code)) {
-    error.value = '請輸入 6 位數直播代碼。'
+    showToast('請輸入 6 位數直播代碼。', 'error')
     return
   }
 
   isLoading.value = true
-  error.value = null
   try {
     const stream = await getStreamByJoinCode(code)
     emit('watchLive', stream)
   } catch {
-    error.value = '找不到這場直播，請確認代碼仍然有效。'
+    showToast('找不到這場直播，請確認代碼仍然有效。', 'error')
   } finally {
     isLoading.value = false
   }
@@ -52,6 +52,5 @@ async function submit() {
         {{ isLoading ? '確認中…' : '確認代碼' }}
       </button>
     </form>
-    <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
   </section>
 </template>

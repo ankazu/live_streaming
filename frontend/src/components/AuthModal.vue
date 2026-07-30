@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { useToast } from '../composables/useToast'
 import { useAuthStore } from '../stores/auth/store'
 
 const props = defineProps<{ mode: 'login' | 'register' }>()
@@ -9,6 +10,7 @@ const auth = useAuthStore()
 const email = ref('')
 const password = ref('')
 const displayName = ref('')
+const { showToast } = useToast()
 
 const modal = ref<HTMLElement | null>(null)
 
@@ -21,7 +23,11 @@ async function submit() {
           password: password.value,
           displayName: displayName.value,
         })
-  if (success) emit('close')
+  if (success) {
+    emit('close')
+  } else if (auth.error) {
+    showToast(auth.error, 'error')
+  }
 }
 
 function focusFirstField() {
@@ -100,7 +106,6 @@ watch(() => props.mode, focusFirstField)
             autocomplete="current-password"
         /></label>
 
-        <p v-if="auth.error" class="text-sm text-[#c94c39]">{{ auth.error }}</p>
         <button
           class="bg-coral shadow-coral/20 rounded-full px-5 py-3 font-semibold text-white shadow-lg disabled:cursor-wait disabled:opacity-60"
           :disabled="auth.isLoading"

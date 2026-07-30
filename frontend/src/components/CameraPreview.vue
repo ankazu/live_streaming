@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 
+import { useToast } from '../composables/useToast'
+
 const video = ref<HTMLVideoElement | null>(null)
 const cameraStream = ref<MediaStream | null>(null)
 const microphoneStream = ref<MediaStream | null>(null)
 const isCameraStarting = ref(false)
 const isMicrophoneStarting = ref(false)
-const error = ref<string | null>(null)
+const { showToast } = useToast()
 
 async function toggleCamera() {
   if (cameraStream.value) {
@@ -15,18 +17,17 @@ async function toggleCamera() {
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    error.value = '目前瀏覽器不支援鏡頭預覽。'
+    showToast('目前瀏覽器不支援鏡頭預覽。', 'error')
     return
   }
 
   isCameraStarting.value = true
-  error.value = null
   try {
     cameraStream.value = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
     await nextTick()
     if (video.value) video.value.srcObject = cameraStream.value
   } catch {
-    error.value = '無法取得鏡頭權限，請允許瀏覽器使用攝影機。'
+    showToast('無法取得鏡頭權限，請允許瀏覽器使用攝影機。', 'error')
   } finally {
     isCameraStarting.value = false
   }
@@ -39,19 +40,18 @@ async function toggleMicrophone() {
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    error.value = '目前瀏覽器不支援麥克風。'
+    showToast('目前瀏覽器不支援麥克風。', 'error')
     return
   }
 
   isMicrophoneStarting.value = true
-  error.value = null
   try {
     microphoneStream.value = await navigator.mediaDevices.getUserMedia({
       video: false,
       audio: true,
     })
   } catch {
-    error.value = '無法取得麥克風權限，請允許瀏覽器使用麥克風。'
+    showToast('無法取得麥克風權限，請允許瀏覽器使用麥克風。', 'error')
   } finally {
     isMicrophoneStarting.value = false
   }
@@ -101,7 +101,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
     <div class="mt-5 flex flex-wrap gap-3">
       <button
         data-testid="toggle-camera"

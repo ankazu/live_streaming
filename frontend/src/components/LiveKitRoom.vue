@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Room, RoomEvent, Track, type Room as LiveKitRoomInstance } from 'livekit-client'
 
 import { getLiveKitToken } from '../api/livekit'
+import { useToast } from '../composables/useToast'
 import { localVideoPreviewStyle, stageVideoClass } from '../lib/livekit-layout'
 
 const props = withDefaults(
@@ -29,7 +30,6 @@ const microphoneEnabled = ref(false)
 const showJoinCode = ref(Boolean(props.joinCode))
 const isCodeCopied = ref(false)
 const remoteVideoTrackCount = ref(0)
-const error = ref<string | null>(null)
 const remoteVideoContainer = ref<HTMLDivElement>()
 const localVideoContainer = ref<HTMLDivElement>()
 const audioContainer = ref<HTMLDivElement>()
@@ -38,6 +38,7 @@ const remoteTrackElements = new Map<string, HTMLDivElement>()
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined
 let isUnmounting = false
 let disconnectRequested = false
+const { showToast } = useToast()
 const localVideoIsStage = computed(() =>
   Boolean(room.value && props.stageParticipantId === room.value.localParticipant.identity),
 )
@@ -95,7 +96,6 @@ function attachExistingRemoteTracks(nextRoom: LiveKitRoomInstance) {
 
 async function connect() {
   isConnecting.value = true
-  error.value = null
   try {
     const access = await getLiveKitToken(props.streamId)
     canPublish.value = access.canPublish
@@ -137,7 +137,7 @@ async function connect() {
       microphoneEnabled.value = true
     }
   } catch (requestError: unknown) {
-    error.value = getErrorMessage(requestError)
+    showToast(getErrorMessage(requestError), 'error')
   } finally {
     isConnecting.value = false
   }
@@ -183,7 +183,7 @@ async function copyJoinCode() {
       isCodeCopied.value = false
     }, 2000)
   } catch {
-    error.value = '目前無法複製直播代碼，請稍後再試。'
+    showToast('目前無法複製直播代碼，請稍後再試。', 'error')
   }
 }
 
@@ -194,7 +194,7 @@ async function toggleCamera() {
     await room.value.localParticipant.setCameraEnabled(!cameraEnabled.value)
     cameraEnabled.value = !cameraEnabled.value
   } catch {
-    error.value = '目前無法切換鏡頭，請稍後再試。'
+    showToast('目前無法切換鏡頭，請稍後再試。', 'error')
   }
 }
 
@@ -205,7 +205,7 @@ async function toggleMicrophone() {
     await room.value.localParticipant.setMicrophoneEnabled(!microphoneEnabled.value)
     microphoneEnabled.value = !microphoneEnabled.value
   } catch {
-    error.value = '目前無法切換麥克風，請稍後再試。'
+    showToast('目前無法切換麥克風，請稍後再試。', 'error')
   }
 }
 
@@ -287,7 +287,7 @@ onBeforeUnmount(() => {
         離開直播
       </button>
     </div>
-    <p v-if="error" class="text-coral mt-3 text-sm">{{ error }}</p>
+
     <div
       data-testid="live-video-surface"
       class="group relative mt-4 aspect-video min-h-48 w-full overflow-hidden rounded-xl bg-black"

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import JoinStreamForm from '../../src/components/JoinStreamForm.vue'
 import { getStreamByJoinCode } from '../../src/api/streams'
+import { useToast } from '../../src/composables/useToast'
 
 vi.mock('../../src/api/streams', () => ({
   getStreamByJoinCode: vi.fn(),
@@ -22,7 +23,11 @@ const liveStream = {
 }
 
 describe('JoinStreamForm', () => {
-  beforeEach(() => mockedGetStreamByJoinCode.mockClear())
+  beforeEach(() => {
+    mockedGetStreamByJoinCode.mockClear()
+    const { toasts, dismissToast } = useToast()
+    for (const toast of toasts.value) dismissToast(toast.id)
+  })
 
   it('resolves a six-digit code only after confirmation', async () => {
     mockedGetStreamByJoinCode.mockResolvedValue(liveStream)
@@ -44,7 +49,7 @@ describe('JoinStreamForm', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(mockedGetStreamByJoinCode).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="alert"]').text()).toContain('6 位數')
+    expect(useToast().toasts.value.at(-1)?.message).toContain('6 位數')
   })
 
   it('renders a confirmation button below the code input', () => {

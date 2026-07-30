@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 
 import AuthenticatedHome from './components/AuthenticatedHome.vue'
 import AuthModal from './components/AuthModal.vue'
+import ToastContainer from './components/ToastContainer.vue'
 import WelcomePage from './components/WelcomePage.vue'
 import { useAuthStore } from './stores/auth/store'
 
@@ -31,4 +32,5 @@ onUnmounted(() => window.removeEventListener('auth:unauthorized', handleUnauthor
     @close="authMode = null"
     @switch-mode="authMode = $event"
   />
+  <ToastContainer />
 </template>
