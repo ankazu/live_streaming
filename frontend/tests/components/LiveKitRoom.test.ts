@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import LiveKitRoom from './LiveKitRoom.vue'
-import componentSource from './LiveKitRoom.vue?raw'
+import LiveKitRoom from '../../src/components/LiveKitRoom.vue'
+import componentSource from '../../src/components/LiveKitRoom.vue?raw'
 
 describe('LiveKitRoom', () => {
   it('does not render a duplicate chat panel', () => {
@@ -39,6 +39,12 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('aria-label="直播媒體控制"')
   })
 
+  it('does not render a local preview or media controls in viewer mode', () => {
+    expect(componentSource).toContain('v-if="canPublish"')
+    expect(componentSource).toContain('v-if="isConnected && canPublish"')
+    expect(componentSource).toContain('data-testid="local-video-container"')
+  })
+
   it('keeps the live video surface constrained to its grid column', () => {
     const wrapper = mount(LiveKitRoom, {
       props: { streamId: 'stream-1' },
@@ -61,6 +67,13 @@ describe('LiveKitRoom', () => {
 
     expect(wrapper.find('section').classes()).toContain('min-w-0')
     expect(wrapper.find('section').classes()).not.toContain('mt-8')
+  })
+
+  it('supports an externally selected stage participant and participant track registry', () => {
+    expect(componentSource).toContain('stageParticipantId')
+    expect(componentSource).toContain('remoteTracks')
+    expect(componentSource).toContain('participant.identity')
+    expect(componentSource).toContain('localVideoIsStage')
   })
 
   it('shows a closable broadcaster code popup that can be reopened from the header icon', async () => {

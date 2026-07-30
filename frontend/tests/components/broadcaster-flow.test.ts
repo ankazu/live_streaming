@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createAndStartStream } from './broadcaster-flow'
-import type { Stream } from '../types/stream'
+import { createAndStartStream } from '../../src/lib/broadcaster-flow'
+import type { Stream } from '../../src/types/stream'
 
 const scheduledStream: Stream = {
   id: 'stream-1',
@@ -9,7 +9,7 @@ const scheduledStream: Stream = {
   title: '測試直播',
   description: '測試簡介',
   status: 'scheduled',
-  broadcasterId: 'broadcaster-1',
+  ownerId: 'broadcaster-1',
   viewerCount: 0,
   createdAt: '2026-07-29T00:00:00.000Z',
 }
@@ -29,5 +29,14 @@ describe('broadcaster live flow', () => {
 
     expect(create).toHaveBeenCalledWith({})
     expect(start).toHaveBeenCalledWith('stream-1')
+  })
+
+  it('creates a multiplayer stream without a mode payload', async () => {
+    const create = vi.fn().mockResolvedValue(scheduledStream)
+    const start = vi.fn().mockResolvedValue(liveStream)
+
+    await createAndStartStream({}, create, start)
+
+    expect(create).toHaveBeenCalledWith({})
   })
 })

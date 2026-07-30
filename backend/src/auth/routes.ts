@@ -5,8 +5,6 @@ import type { UserRepository } from './repository.js'
 import { createAccessToken } from './token.js'
 import { toPublicUser, UserStore, verifyPassword } from './store.js'
 
-const publicRoles = new Set(['viewer', 'broadcaster'])
-
 export function createAuthRouter(userRepository: UserRepository = new UserStore()) {
   const router = Router()
 
@@ -17,8 +15,9 @@ export function createAuthRouter(userRepository: UserRepository = new UserStore(
       response.status(400).json({ success: false, code: 'INVALID_INPUT', message: 'email, password, and displayName are required' })
       return
     }
-    if (typeof role !== 'string' || !publicRoles.has(role)) {
-      response.status(400).json({ success: false, code: 'INVALID_ROLE', message: 'Only viewer or broadcaster registration is allowed' })
+
+    if (role === 'admin') {
+      response.status(400).json({ success: false, code: 'INVALID_ROLE', message: 'Admin accounts cannot be created through public registration' })
       return
     }
     if (password.length < 8) {
@@ -27,7 +26,7 @@ export function createAuthRouter(userRepository: UserRepository = new UserStore(
     }
 
     try {
-      const user = await userRepository.create({ email, password, displayName, role: role as 'viewer' | 'broadcaster' })
+      const user = await userRepository.create({ email, password, displayName })
       response.status(201).json({ success: true, data: { user: toPublicUser(user), accessToken: await createAccessToken(user.id) } })
     } catch (error) {
       if (error instanceof Error && error.message === 'EMAIL_EXISTS') {

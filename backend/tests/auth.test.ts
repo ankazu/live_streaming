@@ -32,7 +32,7 @@ test('viewer can register, login, and fetch the current user', async () => {
 
     assert.equal(registerResponse.status, 201)
     assert.equal(registered.success, true)
-    assert.equal(registered.data.user.role, 'viewer')
+    assert.equal(registered.data.user.role, 'user')
     assert.ok(registered.data.accessToken)
     assert.equal(registered.data.user.passwordHash, undefined)
 
@@ -71,5 +71,25 @@ test('public registration rejects admin role', async () => {
 
     assert.equal(response.status, 400)
     assert.equal((await response.json()).code, 'INVALID_ROLE')
+  })
+})
+
+test('public registration defaults to an active user when role is omitted', async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: 'default-user@example.com',
+        password: 'password123',
+        displayName: 'Default User',
+      }),
+    })
+    const body = await response.json()
+
+    assert.equal(response.status, 201)
+    assert.equal(body.success, true)
+    assert.equal(body.data.user.role, 'user')
+    assert.equal(body.data.user.accountStatus, 'active')
   })
 })

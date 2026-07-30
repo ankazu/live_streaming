@@ -6,7 +6,8 @@ export interface Stream {
   title: string
   description: string
   status: StreamStatus
-  broadcasterId: string
+
+  ownerId: string
   viewerCount: number
   createdAt: string
   startedAt?: string

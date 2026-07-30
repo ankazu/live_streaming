@@ -1,19 +1,36 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import AuthenticatedHome from './AuthenticatedHome.vue'
+import AuthenticatedHome from '../../src/components/AuthenticatedHome.vue'
+import componentSource from '../../src/components/AuthenticatedHome.vue?raw'
+import broadcasterStudioSource from '../../src/components/BroadcasterStudio.vue?raw'
 
 const authState = {
-  user: { displayName: 'Zhou', role: 'broadcaster', accountStatus: 'active' },
+  user: { displayName: 'Zhou', role: 'user', accountStatus: 'active' },
 }
 
-vi.mock('../stores/auth/store', () => ({
+vi.mock('../../src/stores/auth/store', () => ({
   useAuthStore: () => authState,
 }))
 
 describe('AuthenticatedHome live workspace', () => {
   beforeEach(() => {
-    authState.user = { displayName: 'Zhou', role: 'broadcaster', accountStatus: 'active' }
+    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+  })
+
+  it('does not stretch the inactive camera card to the viewport height', () => {
+    expect(componentSource).toContain(
+      'class="grid items-start gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]"',
+    )
+    expect(componentSource).toContain(':class="{ \'lg:items-stretch\': currentStream }"')
+    expect(componentSource).toContain(":class=\"currentStream ? 'h-full min-h-0' : ''\"")
+    expect(componentSource).not.toContain('lg:h-[calc(100vh-1rem)]')
+  })
+
+  it('does not expose a one-to-one stream mode in the broadcaster workspace', () => {
+    expect(broadcasterStudioSource).not.toContain('一對一互動')
+    expect(broadcasterStudioSource).not.toContain('one_to_one')
+    expect(broadcasterStudioSource).not.toContain('選擇直播形式')
   })
 
   it('replaces the camera preview and quick start panel after a live stream is created', async () => {
@@ -41,7 +58,7 @@ describe('AuthenticatedHome live workspace', () => {
                 title: '測試直播',
                 description: '',
                 status: 'live',
-                broadcasterId: 'broadcaster-1',
+                ownerId: 'broadcaster-1',
                 viewerCount: 0,
                 createdAt: '2026-07-29T00:00:00.000Z',
               },
@@ -73,7 +90,7 @@ describe('AuthenticatedHome live workspace', () => {
   })
 
   it('returns to the camera preview when a viewer leaves the live room', async () => {
-    authState.user = { displayName: 'Zhou', role: 'viewer', accountStatus: 'active' }
+    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
     const wrapper = mount(AuthenticatedHome, {
       global: {
         stubs: {
@@ -95,7 +112,7 @@ describe('AuthenticatedHome live workspace', () => {
                 title: '觀眾正在看的直播',
                 description: '',
                 status: 'live',
-                broadcasterId: 'broadcaster-1',
+                ownerId: 'broadcaster-1',
                 viewerCount: 3,
                 createdAt: '2026-07-29T00:00:00.000Z',
               },
@@ -116,8 +133,24 @@ describe('AuthenticatedHome live workspace', () => {
     expect(wrapper.find('[data-testid="camera-preview"]').exists()).toBe(true)
   })
 
+  it('shows both host studio and join form for a regular user', () => {
+    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+    const wrapper = mount(AuthenticatedHome, {
+      global: {
+        stubs: {
+          SiteHeader: true,
+          CameraPreview: true,
+          BroadcasterStudio: { template: '<div data-testid="broadcaster-studio" />' },
+          JoinStreamForm: { template: '<div data-testid="join-stream-form" />' },
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="broadcaster-studio"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="join-stream-form"]').exists()).toBe(true)
+  })
   it('lets a viewer enter a join code from the right workspace panel', async () => {
-    authState.user = { displayName: 'Zhou', role: 'viewer', accountStatus: 'active' }
+    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
     const wrapper = mount(AuthenticatedHome, {
       global: {
         stubs: {
@@ -141,7 +174,7 @@ describe('AuthenticatedHome live workspace', () => {
                 title: '觀眾正在看的直播',
                 description: '',
                 status: 'live',
-                broadcasterId: 'broadcaster-1',
+                ownerId: 'broadcaster-1',
                 viewerCount: 3,
                 createdAt: '2026-07-29T00:00:00.000Z',
               },
@@ -157,5 +190,12 @@ describe('AuthenticatedHome live workspace', () => {
     expect(wrapper.find('[data-testid="camera-preview"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="live-room"]').text()).toContain('true')
     expect(wrapper.text()).toContain('QUICK START')
+  })
+
+  it('passes host moderation context to the live chat', () => {
+    expect(componentSource).toContain(':can-moderate="isCurrentUserHost"')
+    expect(componentSource).toContain(':user-id="auth.user?.id"')
+    expect(componentSource).toContain(':stage-participant-id="stageParticipantId"')
+    expect(componentSource).toContain('@stage-changed="handleStageChanged"')
   })
 })

@@ -10,7 +10,7 @@ export class PrismaUserRepository implements UserRepository {
     email: string
     password: string
     displayName: string
-    role: Exclude<UserRole, 'admin'>
+    role?: Exclude<UserRole, 'admin'>
   }): Promise<UserRecord> {
     try {
       const user = await this.db.user.create({
@@ -18,8 +18,8 @@ export class PrismaUserRepository implements UserRepository {
           email: input.email.trim().toLowerCase(),
           passwordHash: await hashPassword(input.password),
           displayName: input.displayName.trim(),
-          role: input.role,
-          accountStatus: input.role === 'broadcaster' ? 'pending' : 'active',
+          role: input.role ?? 'user',
+          accountStatus: 'active',
         },
       })
       return toUserRecord(user)

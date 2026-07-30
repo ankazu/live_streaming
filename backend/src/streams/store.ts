@@ -4,14 +4,14 @@ import type { UserRole } from '../auth/store.js'
 import type { StreamRepository } from './repository.js'
 
 export type StreamStatus = 'scheduled' | 'live' | 'ended'
-
 export interface StreamRecord {
   id: string
   joinCode: string
   title: string
   description: string
   status: StreamStatus
-  broadcasterId: string
+
+  ownerId: string
   viewerCount: number
   createdAt: string
   startedAt?: string
@@ -21,14 +21,15 @@ export interface StreamRecord {
 export class StreamStore implements StreamRepository {
   private readonly streams = new Map<string, StreamRecord>()
 
-  async create(input: { title: string; description?: string; broadcasterId: string }) {
+  async create(input: { title: string; description?: string; ownerId: string }) {
     const stream: StreamRecord = {
       id: randomUUID(),
       joinCode: this.createJoinCode(),
       title: input.title.trim(),
       description: input.description?.trim() ?? '',
       status: 'scheduled',
-      broadcasterId: input.broadcasterId,
+
+      ownerId: input.ownerId,
       viewerCount: 0,
       createdAt: new Date().toISOString(),
     }
@@ -83,5 +84,5 @@ export class StreamStore implements StreamRepository {
 }
 
 export function canManageStream(role: UserRole, stream: StreamRecord, userId: string) {
-  return role === 'admin' || (role === 'broadcaster' && stream.broadcasterId === userId)
+  return role === 'admin' || stream.ownerId === userId
 }

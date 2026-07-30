@@ -22,8 +22,8 @@ export function createStreamRouter(
     const { title, description } = request.body ?? {}
     const user = await userRepository.findById(request.userId!)
 
-    if (!user || user.role !== 'broadcaster') {
-      response.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Broadcaster access required' })
+    if (!user || user.accountStatus !== 'active') {
+      response.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Active account required' })
       return
     }
     if (title !== undefined && typeof title !== 'string') {
@@ -38,11 +38,10 @@ export function createStreamRouter(
       response.status(400).json({ success: false, code: 'INVALID_DESCRIPTION', message: 'Description must be text' })
       return
     }
-
     const stream = await streamRepository.create({
       title: typeof title === 'string' && title.trim() ? title : `${user.displayName} 的直播`,
       description,
-      broadcasterId: user.id,
+      ownerId: user.id,
     })
     response.status(201).json({ success: true, data: { stream } })
   })
@@ -104,8 +103,8 @@ export function createStreamRouter(
       response.status(403).json({ success: false, code: 'FORBIDDEN', message: 'You cannot manage this stream' })
       return
     }
-    if (action === 'start' && user.accountStatus !== 'active') {
-      response.status(403).json({ success: false, code: 'ACCOUNT_PENDING', message: 'Broadcaster account is not active' })
+    if (user.accountStatus !== 'active') {
+      response.status(403).json({ success: false, code: 'ACCOUNT_NOT_ACTIVE', message: 'Account is not active' })
       return
     }
 

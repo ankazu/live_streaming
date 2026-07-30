@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import CameraPreview from './CameraPreview.vue'
+import CameraPreview from '../../src/components/CameraPreview.vue'
 
 describe('CameraPreview', () => {
   const getUserMedia = vi.fn()

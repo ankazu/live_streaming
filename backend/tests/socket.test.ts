@@ -27,8 +27,8 @@ test('socket CORS allows localhost aliases for local frontend development', () =
 test('authenticated clients can join a live stream and send chat messages', async () => {
   const users = new UserStore()
   const streams = new StreamStore()
-  const user = await users.create({ email: 'viewer@example.com', password: 'password123', displayName: 'Viewer', role: 'viewer' })
-  const stream = await streams.create({ title: 'Live test', broadcasterId: user.id })
+  const user = await users.create({ email: 'viewer@example.com', password: 'password123', displayName: 'Viewer' })
+  const stream = await streams.create({ title: 'Live test', ownerId: user.id })
   await streams.start(stream.id)
   const httpServer = createServer(createApp({ userRepository: users, streamRepository: streams }))
   const socketServer = createSocketServer(httpServer, users, streams)
@@ -58,13 +58,105 @@ test('authenticated clients can join a live stream and send chat messages', asyn
   }
 })
 
+test('viewers can request the stage and only the host can approve them', async () => {
+  const users = new UserStore()
+  const streams = new StreamStore()
+  const host = await users.create({ email: 'stage-host@example.com', password: 'password123', displayName: 'Host' })
+  users.setAccountStatus(host.id, 'active')
+  const viewer = await users.create({ email: 'stage-viewer@example.com', password: 'password123', displayName: 'Viewer' })
+  const stream = await streams.create({ title: 'Stage test', ownerId: host.id })
+  await streams.start(stream.id)
+  const httpServer = createServer(createApp({ userRepository: users, streamRepository: streams }))
+  const socketServer = createSocketServer(httpServer, users, streams)
+
+  await new Promise<void>((resolve) => httpServer.listen(0, resolve))
+  const address = httpServer.address()
+  assert.ok(address && typeof address !== 'string')
+  const hostClient = createClient(`http://localhost:${address.port}`, {
+    auth: { token: await createAccessToken(host.id) },
+  })
+  const viewerClient = createClient(`http://localhost:${address.port}`, {
+    auth: { token: await createAccessToken(viewer.id) },
+  })
+
+  try {
+    await Promise.all([waitForConnect(hostClient), waitForConnect(viewerClient)])
+    await Promise.all([
+      new Promise<void>((resolve) => hostClient.emit('stream:join', stream.id, () => resolve())),
+      new Promise<void>((resolve) => viewerClient.emit('stream:join', stream.id, () => resolve())),
+    ])
+
+    const requestCreated = new Promise<{ id: string; userId: string }>((resolve) =>
+      hostClient.once('participant:request-created', resolve),
+    )
+    const requestResult = await new Promise<{ success: boolean; request?: { id: string } }>((resolve) =>
+      viewerClient.emit('participant:request', resolve),
+    )
+    assert.equal(requestResult.success, true)
+    const request = await requestCreated
+    assert.equal(request.userId, viewer.id)
+
+    const duplicate = await new Promise<{ success: boolean; code?: string }>((resolve) =>
+      viewerClient.emit('participant:request', resolve),
+    )
+    assert.deepEqual(duplicate, { success: false, code: 'REQUEST_ALREADY_PENDING' })
+
+    const nonHostApproval = await new Promise<{ success: boolean; code?: string }>((resolve) =>
+      viewerClient.emit('participant:approve', request.id, resolve),
+    )
+    assert.deepEqual(nonHostApproval, { success: false, code: 'NOT_HOST' })
+
+    const approved = new Promise<{ requestId: string; participant: { role: string } }>((resolve) =>
+      viewerClient.once('participant:approved', resolve),
+    )
+    const autoStageChanged = new Promise<{ streamId: string; participantId: string }>((resolve) =>
+      viewerClient.once('stage:changed', resolve),
+    )
+    const hostApproval = await new Promise<{ success: boolean }>((resolve) =>
+      hostClient.emit('participant:approve', request.id, resolve),
+    )
+    assert.deepEqual(hostApproval, { success: true })
+    const approvedResult = await approved
+    assert.equal(approvedResult.requestId, request.id)
+    assert.equal(approvedResult.participant.role, 'guest')
+    assert.deepEqual(await autoStageChanged, { streamId: stream.id, participantId: viewer.id })
+
+    const stageChanged = new Promise<{ streamId: string; participantId: string }>((resolve) =>
+      viewerClient.once('stage:changed', resolve),
+    )
+    const stageResult = await new Promise<{
+      success: boolean
+      stage?: { streamId: string; participantId: string }
+    }>((resolve) =>
+      hostClient.emit('stage:change', viewer.id, resolve),
+    )
+    assert.deepEqual(stageResult, { success: true, stage: { streamId: stream.id, participantId: viewer.id } })
+    assert.deepEqual(await stageChanged, { streamId: stream.id, participantId: viewer.id })
+
+    const leaveStage = new Promise<{ userId: string; role: string }>((resolve) =>
+      hostClient.once('participant:removed', resolve),
+    )
+    const leaveStageResult = await new Promise<{ success: boolean }>((resolve) =>
+      viewerClient.emit('participant:leave-stage', resolve),
+    )
+    assert.deepEqual(leaveStageResult, { success: true })
+    assert.equal((await leaveStage).userId, viewer.id)
+    assert.equal((await leaveStage).role, 'viewer')
+  } finally {
+    hostClient.disconnect()
+    viewerClient.disconnect()
+    socketServer.close()
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+  }
+})
+
 test('ending a stream notifies every participant in that stream', async () => {
   const users = new UserStore()
   const streams = new StreamStore()
-  const broadcaster = await users.create({ email: 'host@example.com', password: 'password123', displayName: 'Host', role: 'broadcaster' })
+  const broadcaster = await users.create({ email: 'host@example.com', password: 'password123', displayName: 'Host' })
   users.setAccountStatus(broadcaster.id, 'active')
-  const viewer = await users.create({ email: 'audience@example.com', password: 'password123', displayName: 'Audience', role: 'viewer' })
-  const stream = await streams.create({ title: 'Ending test', broadcasterId: broadcaster.id })
+  const viewer = await users.create({ email: 'audience@example.com', password: 'password123', displayName: 'Audience' })
+  const stream = await streams.create({ title: 'Ending test', ownerId: broadcaster.id })
   await streams.start(stream.id)
   const httpServer = createServer(createApp({ userRepository: users, streamRepository: streams }))
   const socketServer = createSocketServer(httpServer, users, streams)
@@ -85,7 +177,7 @@ test('ending a stream notifies every participant in that stream', async () => {
       broadcasterClient.once('stream:participant-left', resolve),
     )
     viewerClient.emit('stream:leave')
-    assert.deepEqual(await participantLeft, { userId: viewer.id, displayName: 'Audience', role: 'viewer' })
+    assert.deepEqual(await participantLeft, { userId: viewer.id, displayName: 'Audience', role: 'user' })
 
     await new Promise<void>((resolve) => viewerClient.emit('stream:join', stream.id, () => resolve()))
     const notifications = [broadcasterClient, viewerClient].map(
@@ -125,7 +217,7 @@ test('socket connection without an access token is rejected', async () => {
 
 test('stream join failures return an acknowledgement and do not enter the chat room', async () => {
   const users = new UserStore()
-  const user = await users.create({ email: 'join-error@example.com', password: 'password123', displayName: 'Join Error', role: 'viewer' })
+  const user = await users.create({ email: 'join-error@example.com', password: 'password123', displayName: 'Join Error' })
   const streams = new StreamStore()
   const failingRepository = {
     create: streams.create.bind(streams),
@@ -166,8 +258,8 @@ test('stream join failures return an acknowledgement and do not enter the chat r
 test('chat messages are rate limited server-side per authenticated user', async () => {
   const users = new UserStore()
   const streams = new StreamStore()
-  const user = await users.create({ email: 'spam@example.com', password: 'password123', displayName: 'Spam', role: 'viewer' })
-  const stream = await streams.create({ title: 'Rate limit test', broadcasterId: user.id })
+  const user = await users.create({ email: 'spam@example.com', password: 'password123', displayName: 'Spam' })
+  const stream = await streams.create({ title: 'Rate limit test', ownerId: user.id })
   await streams.start(stream.id)
   const httpServer = createServer(createApp({ userRepository: users, streamRepository: streams }))
   const socketServer = createSocketServer(httpServer, users, streams)

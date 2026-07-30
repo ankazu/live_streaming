@@ -10,6 +10,8 @@ export interface LiveKitTokenResponse {
   url: string
   roomName: string
   canPublish: boolean
+  canSubscribe: boolean
+  sessionRole: 'host' | 'viewer' | 'guest'
 }
 
 export async function getLiveKitToken(streamId: string) {

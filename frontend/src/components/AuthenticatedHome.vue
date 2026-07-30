@@ -7,22 +7,29 @@ import ChatWindow from './ChatWindow.vue'
 import JoinStreamForm from './JoinStreamForm.vue'
 import LiveKitRoom from './LiveKitRoom.vue'
 import SiteHeader from './SiteHeader.vue'
-import { useAuthStore } from '../stores/auth/store'
 import type { Stream } from '../types/stream'
+import { useAuthStore } from '../stores/auth/store'
 
 const auth = useAuthStore()
 const activeStream = ref<Stream | null>(null)
 const viewerStream = ref<Stream | null>(null)
 const currentStream = computed(() => activeStream.value ?? viewerStream.value)
+const isCurrentUserHost = computed(() =>
+  Boolean(currentStream.value && auth.user?.id === currentStream.value.ownerId),
+)
+const liveRoomRevision = ref(0)
+const stageParticipantId = ref<string>()
 
 function handleLiveCreated(stream: Stream) {
   activeStream.value = stream
   viewerStream.value = null
+  stageParticipantId.value = auth.user?.id
 }
 
 function handleLiveEnded() {
   activeStream.value = null
   viewerStream.value = null
+  stageParticipantId.value = undefined
 }
 
 function handleWatchLive(stream: Stream) {
@@ -32,6 +39,15 @@ function handleWatchLive(stream: Stream) {
 function handleLiveLeft() {
   activeStream.value = null
   viewerStream.value = null
+  stageParticipantId.value = undefined
+}
+
+function handleParticipantRoleChanged() {
+  liveRoomRevision.value += 1
+}
+
+function handleStageChanged(participantId: string) {
+  stageParticipantId.value = participantId
 }
 </script>
 
@@ -54,21 +70,27 @@ function handleLiveLeft() {
 
     <section
       data-testid="workspace-grid"
-      class="grid items-stretch gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]"
+      class="grid items-start gap-8 py-10 lg:grid-cols-[1.35fr_0.65fr]"
+      :class="{ 'lg:items-stretch': currentStream }"
     >
       <LiveKitRoom
         v-if="currentStream"
-        :key="`live-room-${currentStream.id}`"
+        :key="`live-room-${currentStream.id}-${liveRoomRevision}`"
         :stream-id="currentStream.id"
         :join-code="activeStream?.joinCode"
+        :stage-participant-id="stageParticipantId"
         :auto-connect="Boolean(activeStream || viewerStream)"
         @left="handleLiveLeft"
       />
       <CameraPreview v-else />
 
-      <div data-testid="workspace-right" class="flex h-full min-h-0 flex-col gap-6">
+      <div
+        data-testid="workspace-right"
+        class="flex min-w-0 flex-col gap-6"
+        :class="currentStream ? 'h-full min-h-0' : ''"
+      >
         <BroadcasterStudio
-          v-if="auth.user?.role === 'broadcaster' && !activeStream"
+          v-if="!activeStream && !viewerStream"
           :active-stream="activeStream"
           @live-created="handleLiveCreated"
         />
@@ -76,12 +98,13 @@ function handleLiveLeft() {
           v-if="currentStream"
           :key="`chat-${currentStream.id}`"
           :stream-id="currentStream.id"
+          :user-id="auth.user?.id"
+          :can-moderate="isCurrentUserHost"
           @ended="handleLiveEnded"
+          @role-changed="handleParticipantRoleChanged"
+          @stage-changed="handleStageChanged"
         />
-        <JoinStreamForm
-          v-else-if="auth.user?.role !== 'broadcaster'"
-          @watch-live="handleWatchLive"
-        />
+        <JoinStreamForm v-if="!activeStream && !viewerStream" @watch-live="handleWatchLive" />
       </div>
     </section>
 

@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Room, RoomEvent, Track, type Room as LiveKitRoomInstance } from 'livekit-client'
 
 import { getLiveKitToken } from '../api/livekit'
-import { localVideoPreviewStyle } from './livekit-layout'
+import { localVideoPreviewStyle, stageVideoClass } from '../lib/livekit-layout'
 
 const props = withDefaults(
-  defineProps<{ streamId: string; joinCode?: string; autoConnect?: boolean }>(),
+  defineProps<{
+    streamId: string
+    joinCode?: string
+    autoConnect?: boolean
+    stageParticipantId?: string
+  }>(),
   { autoConnect: false },
 )
 const emit = defineEmits<{ left: [] }>()
@@ -14,6 +19,7 @@ const room = ref<LiveKitRoomInstance>()
 const isConnecting = ref(false)
 const isConnected = ref(false)
 const canPublish = ref(false)
+
 const cameraEnabled = ref(false)
 const microphoneEnabled = ref(false)
 const showJoinCode = ref(Boolean(props.joinCode))
@@ -22,17 +28,49 @@ const error = ref<string | null>(null)
 const remoteVideoContainer = ref<HTMLDivElement>()
 const localVideoContainer = ref<HTMLDivElement>()
 const audioContainer = ref<HTMLDivElement>()
+const remoteTracks = new Map<string, Track>()
+const remoteTrackElements = new Map<string, HTMLDivElement>()
+const localVideoIsStage = computed(() =>
+  Boolean(room.value && props.stageParticipantId === room.value.localParticipant.identity),
+)
 
-function attachTrack(track: Track, container: HTMLDivElement | undefined) {
+function attachTrack(
+  track: Track,
+  container: HTMLDivElement | undefined,
+  participantIdentity?: string,
+) {
+  if (track.kind === Track.Kind.Video && participantIdentity) {
+    const existing = remoteTrackElements.get(participantIdentity)
+    if (existing) return
+    const wrapper = document.createElement('div')
+    wrapper.dataset.participantIdentity = participantIdentity
+    wrapper.className = stageVideoClass(participantIdentity === props.stageParticipantId)
+    const element = track.attach()
+    element.classList.add('h-full', 'w-full', 'object-contain')
+    wrapper.append(element)
+    container?.append(wrapper)
+    remoteTracks.set(participantIdentity, track)
+    remoteTrackElements.set(participantIdentity, wrapper)
+    remoteVideoTrackCount.value = remoteTracks.size
+    return
+  }
   const element = track.attach()
   container?.append(element)
-  if (track.kind === Track.Kind.Video) remoteVideoTrackCount.value += 1
 }
 
-function detachTrack(track: Track) {
+function detachTrack(track: Track, participantIdentity?: string) {
   track.detach().forEach((element) => element.remove())
-  if (track.kind === Track.Kind.Video) {
-    remoteVideoTrackCount.value = Math.max(0, remoteVideoTrackCount.value - 1)
+  if (participantIdentity) {
+    remoteTrackElements.get(participantIdentity)?.remove()
+    remoteTrackElements.delete(participantIdentity)
+    remoteTracks.delete(participantIdentity)
+    remoteVideoTrackCount.value = remoteTracks.size
+  }
+}
+
+function updateRemoteLayout() {
+  for (const [identity, element] of remoteTrackElements) {
+    element.className = stageVideoClass(identity === props.stageParticipantId)
   }
 }
 
@@ -41,12 +79,17 @@ async function connect() {
   error.value = null
   try {
     const access = await getLiveKitToken(props.streamId)
+    canPublish.value = access.canPublish
+
     const nextRoom = new Room()
-    nextRoom.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Video) attachTrack(track, remoteVideoContainer.value)
+    nextRoom.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+      if (track.kind === Track.Kind.Video)
+        attachTrack(track, remoteVideoContainer.value, participant.identity)
       else attachTrack(track, audioContainer.value)
     })
-    nextRoom.on(RoomEvent.TrackUnsubscribed, (track) => detachTrack(track))
+    nextRoom.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) =>
+      detachTrack(track, participant.identity),
+    )
     nextRoom.on(RoomEvent.LocalTrackPublished, (publication) => {
       if (publication.track) {
         const container =
@@ -67,7 +110,6 @@ async function connect() {
     await nextRoom.connect(access.url, access.token)
     room.value = nextRoom
     isConnected.value = true
-    canPublish.value = access.canPublish
     if (access.canPublish) {
       await nextRoom.localParticipant.enableCameraAndMicrophone()
       cameraEnabled.value = true
@@ -82,6 +124,8 @@ async function connect() {
 
 function disconnect() {
   room.value?.disconnect()
+  remoteTracks.clear()
+  remoteTrackElements.clear()
   remoteVideoContainer.value?.replaceChildren()
   localVideoContainer.value?.replaceChildren()
   audioContainer.value?.replaceChildren()
@@ -139,6 +183,7 @@ function getErrorMessage(requestError: unknown) {
 onMounted(() => {
   if (props.autoConnect) connect()
 })
+watch(() => props.stageParticipantId, updateRemoteLayout)
 onUnmounted(disconnect)
 </script>
 
@@ -227,9 +272,16 @@ onUnmounted(disconnect)
         class="absolute inset-0 grid h-full w-full place-items-center [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
       />
       <div
+        v-if="canPublish"
         ref="localVideoContainer"
-        class="absolute right-3 bottom-3 z-10 overflow-hidden rounded-lg border-2 border-white/80 bg-black shadow-lg [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
-        :style="localVideoPreviewStyle"
+        data-testid="local-video-container"
+        class="absolute overflow-hidden border-2 border-white/80 bg-black shadow-lg [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
+        :class="
+          localVideoIsStage
+            ? 'inset-0 z-0 rounded-none [&_video]:object-contain'
+            : 'right-3 bottom-3 z-10 rounded-lg'
+        "
+        :style="localVideoIsStage ? undefined : localVideoPreviewStyle"
         aria-label="自己的鏡頭預覽"
       />
       <div

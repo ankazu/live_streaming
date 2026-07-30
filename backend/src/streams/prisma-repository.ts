@@ -8,7 +8,7 @@ import type { StreamRepository } from './repository.js'
 export class PrismaStreamRepository implements StreamRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  async create(input: { title: string; description?: string; broadcasterId: string }) {
+  async create(input: { title: string; description?: string; ownerId: string }) {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       try {
         const stream = await this.db.stream.create({
@@ -16,7 +16,8 @@ export class PrismaStreamRepository implements StreamRepository {
             joinCode: this.createJoinCode(),
             title: input.title.trim(),
             description: input.description?.trim() ?? '',
-            broadcasterId: input.broadcasterId,
+
+            ownerId: input.ownerId,
           },
         })
         return toStreamRecord(stream)
@@ -88,7 +89,8 @@ function toStreamRecord(stream: {
   title: string
   description: string
   status: string
-  broadcasterId: string
+
+  ownerId: string
   viewerCount: number
   createdAt: Date
   startedAt: Date | null
@@ -100,7 +102,8 @@ function toStreamRecord(stream: {
     title: stream.title,
     description: stream.description,
     status: stream.status as StreamStatus,
-    broadcasterId: stream.broadcasterId,
+
+    ownerId: stream.ownerId,
     viewerCount: stream.viewerCount,
     createdAt: stream.createdAt.toISOString(),
     ...(stream.startedAt ? { startedAt: stream.startedAt.toISOString() } : {}),

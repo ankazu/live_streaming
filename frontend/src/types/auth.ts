@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'broadcaster' | 'viewer'
+export type UserRole = 'admin' | 'user'
 export type AccountStatus = 'active' | 'pending' | 'suspended'
 
 export interface User {

@@ -2,7 +2,6 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useAuthStore } from '../stores/auth/store'
-import type { UserRole } from '../types/auth'
 
 const props = defineProps<{ mode: 'login' | 'register' }>()
 const emit = defineEmits<{ close: []; switchMode: [mode: 'login' | 'register'] }>()
@@ -10,7 +9,7 @@ const auth = useAuthStore()
 const email = ref('')
 const password = ref('')
 const displayName = ref('')
-const role = ref<Exclude<UserRole, 'admin'>>('viewer')
+
 const modal = ref<HTMLElement | null>(null)
 
 async function submit() {
@@ -21,7 +20,6 @@ async function submit() {
           email: email.value,
           password: password.value,
           displayName: displayName.value,
-          role: role.value,
         })
   if (success) emit('close')
 }
@@ -101,13 +99,7 @@ watch(() => props.mode, focusFirstField)
             type="password"
             autocomplete="current-password"
         /></label>
-        <label v-if="mode === 'register'" class="form-label"
-          >I want to
-          <select v-model="role">
-            <option value="viewer">Watch streams</option>
-            <option value="broadcaster">Go live</option>
-          </select></label
-        >
+
         <p v-if="auth.error" class="text-sm text-[#c94c39]">{{ auth.error }}</p>
         <button
           class="bg-coral shadow-coral/20 rounded-full px-5 py-3 font-semibold text-white shadow-lg disabled:cursor-wait disabled:opacity-60"

@@ -5,7 +5,7 @@ export interface UserRepository {
     email: string
     password: string
     displayName: string
-    role: Exclude<UserRole, 'admin'>
+    role?: Exclude<UserRole, 'admin'>
   }): Promise<UserRecord>
   findByEmail(email: string): Promise<UserRecord | undefined>
   findById(id: string): Promise<UserRecord | undefined>

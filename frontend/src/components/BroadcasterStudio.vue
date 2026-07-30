@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { createStream, startStream } from '../api/streams'
 import { useAuthStore } from '../stores/auth/store'
 import type { Stream } from '../types/stream'
-import { createAndStartStream } from './broadcaster-flow'
+import { createAndStartStream } from '../lib/broadcaster-flow'
 
 const props = defineProps<{ activeStream?: Stream | null }>()
 const emit = defineEmits<{ liveCreated: [stream: Stream] }>()
@@ -35,10 +35,7 @@ function getRequestMessage(error: unknown) {
 </script>
 
 <template>
-  <section
-    v-if="auth.user?.role === 'broadcaster'"
-    class="border-coral/20 bg-coral/5 rounded-3xl border p-6"
-  >
+  <section class="border-coral/20 bg-coral/5 rounded-3xl border p-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p class="eyebrow">BROADCASTER STUDIO</p>
@@ -47,9 +44,9 @@ function getRequestMessage(error: unknown) {
         </h2>
       </div>
       <span
-        v-if="auth.user.accountStatus === 'pending'"
+        v-if="auth.user?.accountStatus === 'suspended'"
         class="rounded-full bg-amber-100 px-3 py-1 text-xs text-amber-800"
-        >等待審核</span
+        >帳號暫停</span
       >
     </div>
 
@@ -64,7 +61,7 @@ function getRequestMessage(error: unknown) {
     </template>
     <template v-else>
       <p class="text-muted mt-2 text-sm leading-6">
-        開播後會自動產生直播標題與 6 位數代碼，你只需要把代碼分享給觀眾。
+        開播會自動產生 6 位數代碼，其他人可用代碼加入多人直播。
       </p>
       <button
         class="bg-coral mt-6 w-full rounded-full px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
@@ -75,8 +72,8 @@ function getRequestMessage(error: unknown) {
       </button>
     </template>
 
-    <p v-if="auth.user?.accountStatus === 'pending'" class="text-muted mt-3 text-sm">
-      帳號通過審核後才能開始直播。
+    <p v-if="auth.user?.accountStatus === 'suspended'" class="text-muted mt-3 text-sm">
+      帳號目前無法開始直播。
     </p>
     <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
   </section>

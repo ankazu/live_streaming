@@ -7,13 +7,19 @@ import type { UserRepository } from '../auth/repository.js'
 import { toPublicUser } from '../auth/store.js'
 import { verifyAccessToken } from '../auth/token.js'
 import type { StreamRepository } from '../streams/repository.js'
+import { ParticipantError, ParticipantManager } from '../streams/participants.js'
 
 type Presence = { userId: string; displayName: string; socketId: string; joinedAt: string }
 
 const CHAT_RATE_LIMIT_MAX_MESSAGES = 5
 const CHAT_RATE_LIMIT_WINDOW_MS = 10_000
 
-export function createSocketServer(httpServer: HttpServer, userRepository: UserRepository, streamRepository: StreamRepository) {
+export function createSocketServer(
+  httpServer: HttpServer,
+  userRepository: UserRepository,
+  streamRepository: StreamRepository,
+  participantManager = new ParticipantManager(),
+) {
   const io = new Server(httpServer, {
     cors: { origin: getSocketCorsOrigins() },
   })
@@ -44,7 +50,6 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
       try {
         const stream = await streamRepository.findById(streamId)
         if (!stream || stream.status !== 'live') return callback?.({ success: false, code: 'STREAM_NOT_LIVE' })
-
         await socket.join(roomName(stream.id))
         joinedStreamId = stream.id
         if (currentStreamId) leaveStream()
@@ -52,8 +57,16 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
         const streamPresence = presence.get(stream.id) ?? new Map<string, Presence>()
         streamPresence.set(socket.id, { userId: user.id, displayName: user.displayName, socketId: socket.id, joinedAt: new Date().toISOString() })
         presence.set(stream.id, streamPresence)
+        const participant = participantManager.join(stream.id, user, socket.id, stream.ownerId === user.id)
         socket.emit('presence:snapshot', [...streamPresence.values()])
+        socket.emit('participant:requests', participant.role === 'host' ? participantManager.getPendingRequests(stream.id) : [])
+        socket.emit('stage:changed', {
+          streamId: stream.id,
+          participantId: participantManager.getStage(stream.id) ?? stream.ownerId,
+        })
         socket.to(roomName(stream.id)).emit('presence:joined', { user: { id: user.id, displayName: user.displayName } })
+        socket.to(roomName(stream.id)).emit('participant:joined', participant)
+        io.to(roomName(stream.id)).emit('presence:count', { viewerCount: streamPresence.size })
         callback?.({ success: true, viewerCount: streamPresence.size })
       } catch {
         if (joinedStreamId) socket.leave(roomName(joinedStreamId))
@@ -72,6 +85,99 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
       callback?.({ success: true, message })
     })
 
+    socket.on('participant:request', (callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      try {
+        const request = participantManager.requestToJoin(currentStreamId, user)
+        io.to(roomName(currentStreamId)).emit('participant:request-created', request)
+        callback?.({ success: true, request })
+      } catch (error) {
+        callback?.({ success: false, code: error instanceof ParticipantError ? error.code : 'REQUEST_FAILED' })
+      }
+    })
+
+    socket.on('participant:approve', (requestId: unknown, callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      if (typeof requestId !== 'string') return callback?.({ success: false, code: 'REQUEST_NOT_FOUND' })
+      try {
+        const result = participantManager.approve(currentStreamId, requestId, user.id)
+        io.to(roomName(currentStreamId)).emit('participant:approved', {
+          requestId: result.request.id,
+          participant: result.participant,
+        })
+        io.to(roomName(currentStreamId)).emit('stage:changed', {
+          streamId: currentStreamId,
+          participantId: result.participant.userId,
+        })
+        callback?.({ success: true })
+      } catch (error) {
+        callback?.({ success: false, code: error instanceof ParticipantError ? error.code : 'APPROVE_FAILED' })
+      }
+    })
+
+    socket.on('participant:reject', (requestId: unknown, callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      if (typeof requestId !== 'string') return callback?.({ success: false, code: 'REQUEST_NOT_FOUND' })
+      try {
+        const request = participantManager.reject(currentStreamId, requestId, user.id)
+        io.to(roomName(currentStreamId)).emit('participant:rejected', request)
+        callback?.({ success: true })
+      } catch (error) {
+        callback?.({ success: false, code: error instanceof ParticipantError ? error.code : 'REJECT_FAILED' })
+      }
+    })
+
+    socket.on('participant:remove', async (userId: unknown, callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      if (typeof userId !== 'string') return callback?.({ success: false, code: 'PARTICIPANT_NOT_FOUND' })
+      try {
+        const participant = participantManager.removeGuest(currentStreamId, userId, user.id)
+        io.to(roomName(currentStreamId)).emit('participant:removed', participant)
+        const stream = await streamRepository.findById(currentStreamId)
+        io.to(roomName(currentStreamId)).emit('stage:changed', {
+          streamId: currentStreamId,
+          participantId: participantManager.getStage(currentStreamId) ?? stream?.ownerId,
+        })
+        callback?.({ success: true })
+      } catch (error) {
+        callback?.({ success: false, code: error instanceof ParticipantError ? error.code : 'REMOVE_FAILED' })
+      }
+    })
+
+    socket.on('stage:change', (participantId: unknown, callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      if (typeof participantId !== 'string') return callback?.({ success: false, code: 'PARTICIPANT_NOT_FOUND' })
+      try {
+        const stage = participantManager.changeStage(currentStreamId, participantId, user.id)
+        io.to(roomName(currentStreamId)).emit('stage:changed', stage)
+        callback?.({ success: true, stage })
+      } catch (error) {
+        callback?.({
+          success: false,
+          code: error instanceof ParticipantError ? error.code : 'STAGE_CHANGE_FAILED',
+        })
+      }
+    })
+
+    socket.on('participant:leave-stage', async (callback?: (result: object) => void) => {
+      if (!currentStreamId) return callback?.({ success: false, code: 'NOT_IN_STREAM' })
+      try {
+        const participant = participantManager.leaveStage(currentStreamId, user.id)
+        io.to(roomName(currentStreamId)).emit('participant:removed', participant)
+        const stream = await streamRepository.findById(currentStreamId)
+        io.to(roomName(currentStreamId)).emit('stage:changed', {
+          streamId: currentStreamId,
+          participantId: participantManager.getStage(currentStreamId) ?? stream?.ownerId,
+        })
+        callback?.({ success: true })
+      } catch (error) {
+        callback?.({
+          success: false,
+          code: error instanceof ParticipantError ? error.code : 'LEAVE_STAGE_FAILED',
+        })
+      }
+    })
+
     socket.on('presence:heartbeat', (callback?: (result: object) => void) => callback?.({ success: true }))
     socket.on('stream:leave', leaveStream)
     socket.on('disconnect', leaveStream)
@@ -81,6 +187,7 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
       const streamId = currentStreamId
       currentStreamId = undefined
       socket.leave(roomName(streamId))
+      const participant = participantManager.leaveBySocket(streamId, socket.id)
       const streamPresence = presence.get(streamId)
       streamPresence?.delete(socket.id)
       if (streamPresence?.size === 0) presence.delete(streamId)
@@ -90,6 +197,7 @@ export function createSocketServer(httpServer: HttpServer, userRepository: UserR
         role: user.role,
       })
       socket.to(roomName(streamId)).emit('presence:left', { userId: user.id })
+      if (participant) socket.to(roomName(streamId)).emit('participant:left', participant)
       io.to(roomName(streamId)).emit('presence:count', { viewerCount: streamPresence?.size ?? 0 })
     }
 

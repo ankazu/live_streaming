@@ -5,7 +5,7 @@ import type { UserRepository } from './repository.js'
 
 const scrypt = promisify(scryptCallback)
 
-export type UserRole = 'admin' | 'broadcaster' | 'viewer'
+export type UserRole = 'admin' | 'user'
 export type AccountStatus = 'active' | 'pending' | 'suspended'
 
 export interface UserRecord {
@@ -50,7 +50,7 @@ export async function verifyPassword(password: string, storedHash: string): Prom
 export class UserStore implements UserRepository {
   private readonly users = new Map<string, UserRecord>()
 
-  async create(input: { email: string; password: string; displayName: string; role: Exclude<UserRole, 'admin'> }) {
+  async create(input: { email: string; password: string; displayName: string; role?: Exclude<UserRole, 'admin'> }) {
     const email = input.email.trim().toLowerCase()
     if (await this.findByEmail(email)) throw new Error('EMAIL_EXISTS')
 
@@ -59,8 +59,8 @@ export class UserStore implements UserRepository {
       email,
       passwordHash: await hashPassword(input.password),
       displayName: input.displayName.trim(),
-      role: input.role,
-      accountStatus: input.role === 'broadcaster' ? 'pending' : 'active',
+      role: input.role ?? 'user',
+      accountStatus: 'active',
       createdAt: new Date().toISOString(),
     }
     this.users.set(user.id, user)

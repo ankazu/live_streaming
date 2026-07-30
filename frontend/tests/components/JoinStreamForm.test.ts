@@ -1,10 +1,10 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import JoinStreamForm from './JoinStreamForm.vue'
-import { getStreamByJoinCode } from '../api/streams'
+import JoinStreamForm from '../../src/components/JoinStreamForm.vue'
+import { getStreamByJoinCode } from '../../src/api/streams'
 
-vi.mock('../api/streams', () => ({
+vi.mock('../../src/api/streams', () => ({
   getStreamByJoinCode: vi.fn(),
 }))
 
@@ -16,7 +16,7 @@ const liveStream = {
   title: '測試直播',
   description: '',
   status: 'live' as const,
-  broadcasterId: 'broadcaster-1',
+  ownerId: 'broadcaster-1',
   viewerCount: 2,
   createdAt: '2026-07-29T00:00:00.000Z',
 }

@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { AuthResponse, User, UserRole } from '../types/auth'
+import type { AuthResponse, User } from '../types/auth'
 
 interface ApiEnvelope<T> {
   success: boolean
@@ -10,7 +10,6 @@ export interface RegisterInput {
   email: string
   password: string
   displayName: string
-  role: Exclude<UserRole, 'admin'>
 }
 
 export interface LoginInput {
