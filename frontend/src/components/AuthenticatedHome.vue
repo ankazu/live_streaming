@@ -38,7 +38,7 @@ function handleLiveLeft() {
 <template>
   <main class="mx-auto max-w-[1280px] overflow-hidden px-6 sm:px-14">
     <SiteHeader dashboard />
-    <section class="border-b border-[#e5e0da] py-10 sm:py-14">
+    <!-- <section class="border-b border-[#e5e0da] py-10 sm:py-14">
       <div class="flex flex-wrap items-end justify-between gap-5">
         <div>
           <p class="eyebrow">YOUR LIVE DESK</p>
@@ -50,7 +50,7 @@ function handleLiveLeft() {
           <p class="text-muted mt-3">今天想分享什麼？先從鏡頭預覽開始。</p>
         </div>
       </div>
-    </section>
+    </section> -->
 
     <section
       data-testid="workspace-grid"

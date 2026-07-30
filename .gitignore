@@ -10,3 +10,4 @@ backend/dist/
 doc/*
 !doc/socketio-presence-follow-ups.md
 AGENTS.md
+.hermes
