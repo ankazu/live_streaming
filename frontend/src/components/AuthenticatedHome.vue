@@ -19,6 +19,14 @@ const isCurrentUserHost = computed(() =>
 )
 const liveRoomRevision = ref(0)
 const stageParticipantId = ref<string>()
+const participantRole = ref<'viewer' | 'guest'>('viewer')
+const isChatReady = ref(false)
+const chatWindow = ref<InstanceType<typeof ChatWindow> | null>(null)
+const canRequestStage = computed(
+  () => !isCurrentUserHost.value && participantRole.value === 'viewer',
+)
+const requestStagePending = computed(() => chatWindow.value?.isRequestPending ?? false)
+const hasPendingStageRequest = computed(() => chatWindow.value?.hasPendingStageRequest ?? false)
 
 function handleLiveCreated(stream: Stream) {
   activeStream.value = stream
@@ -30,6 +38,8 @@ function handleLiveEnded() {
   activeStream.value = null
   viewerStream.value = null
   stageParticipantId.value = undefined
+  participantRole.value = 'viewer'
+  isChatReady.value = false
 }
 
 function handleWatchLive(stream: Stream) {
@@ -40,10 +50,17 @@ function handleLiveLeft() {
   activeStream.value = null
   viewerStream.value = null
   stageParticipantId.value = undefined
+  participantRole.value = 'viewer'
+  isChatReady.value = false
 }
 
-function handleParticipantRoleChanged() {
+function handleParticipantRoleChanged(role: 'viewer' | 'guest') {
+  participantRole.value = role
   liveRoomRevision.value += 1
+}
+
+function handleRequestStage() {
+  chatWindow.value?.requestToJoin()
 }
 
 function handleStageChanged(participantId: string) {
@@ -79,8 +96,13 @@ function handleStageChanged(participantId: string) {
         :stream-id="currentStream.id"
         :join-code="activeStream?.joinCode"
         :stage-participant-id="stageParticipantId"
+        :can-request-stage="canRequestStage"
+        :request-stage-ready="isChatReady"
+        :request-stage-pending="requestStagePending"
+        :has-pending-stage-request="hasPendingStageRequest"
         :auto-connect="Boolean(activeStream || viewerStream)"
         @left="handleLiveLeft"
+        @request-stage="handleRequestStage"
       />
       <CameraPreview v-else />
 
@@ -95,6 +117,7 @@ function handleStageChanged(participantId: string) {
           @live-created="handleLiveCreated"
         />
         <ChatWindow
+          ref="chatWindow"
           v-if="currentStream"
           :key="`chat-${currentStream.id}`"
           :stream-id="currentStream.id"
@@ -103,6 +126,7 @@ function handleStageChanged(participantId: string) {
           @ended="handleLiveEnded"
           @role-changed="handleParticipantRoleChanged"
           @stage-changed="handleStageChanged"
+          @chat-ready="isChatReady = $event"
         />
         <JoinStreamForm v-if="!activeStream && !viewerStream" @watch-live="handleWatchLive" />
       </div>

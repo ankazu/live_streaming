@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import LiveKitRoom from '../../src/components/LiveKitRoom.vue'
 import componentSource from '../../src/components/LiveKitRoom.vue?raw'
@@ -11,11 +11,13 @@ describe('LiveKitRoom', () => {
     })
 
     expect(wrapper.find('input[placeholder="Say something…"]').exists()).toBe(false)
-    expect(componentSource).not.toContain('聊天室')
+    expect(componentSource).not.toContain('LIVE CHAT')
   })
 
-  it('does not attach already published remote tracks a second time', () => {
-    expect(componentSource).not.toContain('remoteParticipants.values()')
+  it('attaches already published remote tracks without duplicating subscribed tracks', () => {
+    expect(componentSource).toContain('remoteParticipants.values()')
+    expect(componentSource).toContain('publication.isSubscribed')
+    expect(componentSource).toContain('remoteTrackElements.get(participantIdentity)')
   })
 
   it('does not show a manual join button for auto-connected rooms', () => {
@@ -28,6 +30,16 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('離開直播')
     expect(componentSource).not.toContain('Join live')
     expect(componentSource).not.toContain('>\n        Leave\n')
+  })
+
+  it('places the viewer stage request next to the leave control', () => {
+    expect(componentSource).toContain('hasPendingStageRequest?: boolean')
+    expect(componentSource).toContain('data-testid="participant-request"')
+    expect(componentSource).toContain('@click="emit(\'requestStage\')"')
+    expect(componentSource).toContain(
+      ':disabled="props.requestStagePending || props.hasPendingStageRequest"',
+    )
+    expect(componentSource).toContain('離開直播')
   })
 
   it('keeps broadcaster camera and microphone controls inside the live video surface', () => {
@@ -76,6 +88,12 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('localVideoIsStage')
   })
 
+  it('does not treat component cleanup as a live-room leave', () => {
+    expect(componentSource).toContain('onBeforeUnmount')
+    expect(componentSource).toContain('isUnmounting = true')
+    expect(componentSource).toContain("if (!isUnmounting && !disconnectRequested) emit('left')")
+  })
+
   it('shows a closable broadcaster code popup that can be reopened from the header icon', async () => {
     const wrapper = mount(LiveKitRoom, {
       props: { streamId: 'stream-1', joinCode: '482731' },
@@ -86,5 +104,20 @@ describe('LiveKitRoom', () => {
     expect(wrapper.find('[data-testid="live-code-popup"]').exists()).toBe(false)
     await wrapper.get('[data-testid="live-code-toggle"]').trigger('click')
     expect(wrapper.get('[data-testid="live-code-popup"]').text()).toContain('482731')
+  })
+
+  it('copies the broadcaster code from the code popup', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    const wrapper = mount(LiveKitRoom, {
+      props: { streamId: 'stream-1', joinCode: '482731' },
+    })
+
+    await wrapper.get('[data-testid="live-code-copy"]').trigger('click')
+
+    expect(writeText).toHaveBeenCalledWith('482731')
+    expect(wrapper.get('[data-testid="live-code-copy"]').attributes('aria-label')).toBe(
+      '已複製直播代碼',
+    )
   })
 })

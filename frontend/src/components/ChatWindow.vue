@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { io, type Socket } from 'socket.io-client'
 
 const props = defineProps<{ streamId: string; userId?: string; canModerate?: boolean }>()
@@ -7,6 +7,7 @@ const emit = defineEmits<{
   ended: []
   roleChanged: [role: 'viewer' | 'guest']
   stageChanged: [participantId: string]
+  chatReady: [ready: boolean]
 }>()
 
 type ChatMessage = { id: string; displayName: string; content: string }
@@ -23,7 +24,9 @@ const participantRole = ref<'viewer' | 'guest'>('viewer')
 const pendingRequests = ref<ParticipantRequest[]>([])
 const guests = ref<Participant[]>([])
 const requestPending = ref(false)
+const hasPendingStageRequest = ref(false)
 const stageParticipantId = ref(props.userId)
+const isChatReady = computed(() => Boolean(socket.value?.connected && isJoined.value))
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined
 
 function connectChat() {
@@ -44,6 +47,7 @@ function connectChat() {
         if (result.success && result.viewerCount !== undefined) {
           isJoined.value = true
           presenceCount.value = result.viewerCount
+          emit('chatReady', true)
           return
         }
         error.value = '聊天室加入直播間失敗。'
@@ -54,6 +58,9 @@ function connectChat() {
   chatSocket.on('chat:message', (message: ChatMessage) => messages.value.push(message))
   chatSocket.on('participant:requests', (requests: ParticipantRequest[]) => {
     pendingRequests.value = requests
+    hasPendingStageRequest.value = Boolean(
+      props.userId && requests.some((request) => request.userId === props.userId),
+    )
   })
   chatSocket.on('participant:request-created', (request: ParticipantRequest) => {
     if (props.canModerate && !pendingRequests.value.some((item) => item.id === request.id)) {
@@ -70,13 +77,17 @@ function connectChat() {
       participant,
     ]
     if (participant.userId === props.userId) {
+      hasPendingStageRequest.value = false
       participantRole.value = 'guest'
       emit('roleChanged', 'guest')
     }
   })
   chatSocket.on('participant:rejected', (request: ParticipantRequest) => {
     pendingRequests.value = pendingRequests.value.filter((item) => item.id !== request.id)
-    if (request.userId === props.userId) error.value = '主播已拒絕你的上台申請。'
+    if (request.userId === props.userId) {
+      hasPendingStageRequest.value = false
+      error.value = '主播已拒絕你的上台申請。'
+    }
   })
   chatSocket.on('participant:removed', (participant: Participant) => {
     guests.value = guests.value.filter((guest) => guest.userId !== participant.userId)
@@ -123,10 +134,17 @@ function sendMessage() {
 }
 
 function requestToJoin() {
-  if (!socket.value?.connected || !isJoined.value || requestPending.value) return
+  if (!socket.value?.connected || !isJoined.value) {
+    error.value = '聊天室仍在連線中，請稍候再試。'
+    return
+  }
+  if (requestPending.value || hasPendingStageRequest.value) return
   requestPending.value = true
   socket.value.emit('participant:request', (result: { success: boolean; code?: string }) => {
     requestPending.value = false
+    if (result.success || result.code === 'REQUEST_ALREADY_PENDING') {
+      hasPendingStageRequest.value = true
+    }
     error.value = result.success
       ? '已送出上台申請，等待主播同意。'
       : result.code === 'REQUEST_ALREADY_PENDING'
@@ -171,7 +189,15 @@ function disconnect() {
   socket.value?.disconnect()
   socket.value = undefined
   isJoined.value = false
+  emit('chatReady', false)
 }
+
+defineExpose({
+  hasPendingStageRequest: computed(() => hasPendingStageRequest.value),
+  isRequestPending: computed(() => requestPending.value || hasPendingStageRequest.value),
+  isChatReady,
+  requestToJoin,
+})
 
 onMounted(connectChat)
 onUnmounted(disconnect)
@@ -188,17 +214,6 @@ onUnmounted(disconnect)
       </span>
     </div>
     <p v-if="error" class="text-coral mt-3 text-sm" role="alert">{{ error }}</p>
-    <div v-if="!props.canModerate && participantRole === 'viewer'" class="mt-4">
-      <button
-        data-testid="participant-request"
-        class="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold transition hover:bg-white/10 disabled:opacity-50"
-        type="button"
-        :disabled="requestPending"
-        @click="requestToJoin"
-      >
-        {{ requestPending ? '申請中…' : '申請上台' }}
-      </button>
-    </div>
     <div
       v-if="props.canModerate && pendingRequests.length"
       class="mt-4 space-y-2 rounded-2xl bg-white/5 p-3"

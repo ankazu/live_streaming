@@ -11,7 +11,8 @@ describe('ChatWindow layout', () => {
     expect(componentSource).toContain('participant:leave-stage')
     expect(componentSource).toContain('stage:change')
     expect(componentSource).toContain('stage:changed')
-    expect(componentSource).toContain('申請上台')
+    expect(componentSource).toContain('requestToJoin')
+    expect(componentSource).toContain('defineExpose')
     expect(componentSource).toContain('同意上台')
     expect(componentSource).toContain('拒絕')
     expect(componentSource).toContain('移除來賓')
@@ -19,9 +20,22 @@ describe('ChatWindow layout', () => {
     expect(componentSource).toContain('主畫面')
   })
 
+  it('keeps a successful stage request pending until the server resolves it', () => {
+    expect(componentSource).toContain('hasPendingStageRequest')
+    expect(componentSource).toContain('hasPendingStageRequest.value = true')
+    expect(componentSource).toContain('requestPending.value || hasPendingStageRequest.value')
+    expect(componentSource).toContain('participant:approved')
+    expect(componentSource).toContain('participant:rejected')
+  })
+
+  it('does not expose a duplicate canRequestStage capability', () => {
+    expect(componentSource).not.toContain('canRequestStage: computed')
+  })
+
   it('accepts workspace identity and moderation props', () => {
     expect(componentSource).toContain('userId?: string')
     expect(componentSource).toContain('canModerate?: boolean')
+    expect(componentSource).toContain('isChatReady')
   })
 
   it('wraps long unbroken messages without expanding the chat column', () => {

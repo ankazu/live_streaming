@@ -1,3 +1,4 @@
+import { defineComponent, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -197,5 +198,90 @@ describe('AuthenticatedHome live workspace', () => {
     expect(componentSource).toContain(':user-id="auth.user?.id"')
     expect(componentSource).toContain(':stage-participant-id="stageParticipantId"')
     expect(componentSource).toContain('@stage-changed="handleStageChanged"')
+    expect(componentSource).toContain('ref="chatWindow"')
+    expect(componentSource).toContain('@request-stage="handleRequestStage"')
+  })
+
+  it('wires stage requests, pending state, and role changes across the workspace', async () => {
+    const requestPending = ref(false)
+    const hasPendingStageRequest = ref(false)
+    const isChatReady = ref(true)
+    const requestToJoin = vi.fn()
+    const liveRoomMounts = ref(0)
+    const liveStream = {
+      id: 'stream-viewer-1',
+      title: '觀眾正在看的直播',
+      description: '',
+      status: 'live' as const,
+      ownerId: 'broadcaster-1',
+      viewerCount: 3,
+      createdAt: '2026-07-29T00:00:00.000Z',
+    }
+    const LiveKitRoomStub = defineComponent({
+      props: {
+        canRequestStage: Boolean,
+        requestStagePending: Boolean,
+        hasPendingStageRequest: Boolean,
+      },
+      emits: ['requestStage'],
+      setup(_props, { emit }) {
+        liveRoomMounts.value += 1
+        return { emit }
+      },
+      template:
+        '<div data-testid="live-room"><button data-testid="request-stage" @click="emit(\'requestStage\')" /><span data-testid="request-capability">{{ canRequestStage }}</span><span data-testid="request-pending">{{ requestStagePending }}</span><span data-testid="request-already-pending">{{ hasPendingStageRequest }}</span></div>',
+    })
+    const ChatWindowStub = defineComponent({
+      emits: ['roleChanged'],
+      setup(_props, { expose, emit }) {
+        expose({
+          requestToJoin,
+          isRequestPending: requestPending,
+          hasPendingStageRequest,
+          isChatReady,
+        })
+        return { emit }
+      },
+      template:
+        '<div data-testid="chat-window"><button data-testid="role-change" @click="emit(\'roleChanged\', \'guest\')" /></div>',
+    })
+    const wrapper = mount(AuthenticatedHome, {
+      global: {
+        stubs: {
+          SiteHeader: true,
+          CameraPreview: true,
+          BroadcasterStudio: {
+            emits: ['liveCreated'],
+            setup(_props, { emit }) {
+              return { emit, liveStream }
+            },
+            template:
+              '<button data-testid="start-live" @click="emit(\'liveCreated\', liveStream)" />',
+          },
+          JoinStreamForm: true,
+          LiveKitRoom: LiveKitRoomStub,
+          ChatWindow: ChatWindowStub,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="start-live"]').trigger('click')
+    const liveRoom = wrapper.findComponent(LiveKitRoomStub)
+    expect(liveRoom.props('canRequestStage')).toBe(true)
+    expect(liveRoom.get('[data-testid="request-pending"]').text()).toBe('false')
+
+    await liveRoom.get('[data-testid="request-stage"]').trigger('click')
+    expect(requestToJoin).toHaveBeenCalledOnce()
+
+    requestPending.value = true
+    hasPendingStageRequest.value = true
+    await nextTick()
+    expect(liveRoom.get('[data-testid="request-pending"]').text()).toBe('true')
+    expect(liveRoom.get('[data-testid="request-already-pending"]').text()).toBe('true')
+
+    await wrapper.get('[data-testid="role-change"]').trigger('click')
+    await nextTick()
+    expect(liveRoomMounts.value).toBe(2)
+    expect(wrapper.findComponent(LiveKitRoomStub).props('canRequestStage')).toBe(false)
   })
 })

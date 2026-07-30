@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Room, RoomEvent, Track, type Room as LiveKitRoomInstance } from 'livekit-client'
 
 import { getLiveKitToken } from '../api/livekit'
@@ -11,10 +11,14 @@ const props = withDefaults(
     joinCode?: string
     autoConnect?: boolean
     stageParticipantId?: string
+    canRequestStage?: boolean
+    requestStageReady?: boolean
+    requestStagePending?: boolean
+    hasPendingStageRequest?: boolean
   }>(),
   { autoConnect: false },
 )
-const emit = defineEmits<{ left: [] }>()
+const emit = defineEmits<{ left: []; requestStage: [] }>()
 const room = ref<LiveKitRoomInstance>()
 const isConnecting = ref(false)
 const isConnected = ref(false)
@@ -23,6 +27,7 @@ const canPublish = ref(false)
 const cameraEnabled = ref(false)
 const microphoneEnabled = ref(false)
 const showJoinCode = ref(Boolean(props.joinCode))
+const isCodeCopied = ref(false)
 const remoteVideoTrackCount = ref(0)
 const error = ref<string | null>(null)
 const remoteVideoContainer = ref<HTMLDivElement>()
@@ -30,6 +35,9 @@ const localVideoContainer = ref<HTMLDivElement>()
 const audioContainer = ref<HTMLDivElement>()
 const remoteTracks = new Map<string, Track>()
 const remoteTrackElements = new Map<string, HTMLDivElement>()
+let copyResetTimer: ReturnType<typeof setTimeout> | undefined
+let isUnmounting = false
+let disconnectRequested = false
 const localVideoIsStage = computed(() =>
   Boolean(room.value && props.stageParticipantId === room.value.localParticipant.identity),
 )
@@ -74,6 +82,17 @@ function updateRemoteLayout() {
   }
 }
 
+function attachExistingRemoteTracks(nextRoom: LiveKitRoomInstance) {
+  for (const participant of nextRoom.remoteParticipants.values()) {
+    for (const publication of participant.trackPublications.values()) {
+      if (!publication.isSubscribed || !publication.track) continue
+      if (publication.track.kind === Track.Kind.Video) {
+        attachTrack(publication.track, remoteVideoContainer.value, participant.identity)
+      }
+    }
+  }
+}
+
 async function connect() {
   isConnecting.value = true
   error.value = null
@@ -105,10 +124,12 @@ async function connect() {
       cameraEnabled.value = false
       microphoneEnabled.value = false
       room.value = undefined
-      emit('left')
+      if (!isUnmounting && !disconnectRequested) emit('left')
     })
     await nextRoom.connect(access.url, access.token)
+    attachExistingRemoteTracks(nextRoom)
     room.value = nextRoom
+    disconnectRequested = false
     isConnected.value = true
     if (access.canPublish) {
       await nextRoom.localParticipant.enableCameraAndMicrophone()
@@ -123,6 +144,7 @@ async function connect() {
 }
 
 function disconnect() {
+  disconnectRequested = true
   room.value?.disconnect()
   remoteTracks.clear()
   remoteTrackElements.clear()
@@ -148,6 +170,21 @@ function showCode() {
 
 function hideCode() {
   showJoinCode.value = false
+}
+
+async function copyJoinCode() {
+  if (!props.joinCode || !navigator.clipboard) return
+
+  try {
+    await navigator.clipboard.writeText(props.joinCode)
+    isCodeCopied.value = true
+    if (copyResetTimer) clearTimeout(copyResetTimer)
+    copyResetTimer = setTimeout(() => {
+      isCodeCopied.value = false
+    }, 2000)
+  } catch {
+    error.value = '目前無法複製直播代碼，請稍後再試。'
+  }
 }
 
 async function toggleCamera() {
@@ -184,7 +221,11 @@ onMounted(() => {
   if (props.autoConnect) connect()
 })
 watch(() => props.stageParticipantId, updateRemoteLayout)
-onUnmounted(disconnect)
+onBeforeUnmount(() => {
+  isUnmounting = true
+  if (copyResetTimer) clearTimeout(copyResetTimer)
+  disconnect()
+})
 </script>
 
 <template>
@@ -214,6 +255,22 @@ onUnmounted(disconnect)
           </svg>
         </button>
       </div>
+      <button
+        v-if="props.canRequestStage && isConnected"
+        data-testid="participant-request"
+        class="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold transition hover:bg-white/10 disabled:opacity-50"
+        type="button"
+        :disabled="props.requestStagePending || props.hasPendingStageRequest"
+        @click="emit('requestStage')"
+      >
+        {{
+          props.requestStagePending
+            ? '申請中…'
+            : props.hasPendingStageRequest
+              ? '等待主播同意'
+              : '申請上台'
+        }}
+      </button>
       <button
         v-if="!props.autoConnect && !isConnected"
         class="bg-coral rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
@@ -252,9 +309,43 @@ onUnmounted(disconnect)
             <span aria-hidden="true">×</span>
           </button>
         </div>
-        <p class="mt-1 font-mono text-2xl font-semibold tracking-[4px] text-white">
-          {{ props.joinCode }}
-        </p>
+        <div class="mt-1 flex items-center gap-2">
+          <p class="font-mono text-2xl font-semibold tracking-[4px] text-white">
+            {{ props.joinCode }}
+          </p>
+          <button
+            data-testid="live-code-copy"
+            class="rounded-md p-1 text-white/60 transition hover:bg-white/10 hover:text-white"
+            type="button"
+            :aria-label="isCodeCopied ? '已複製直播代碼' : '複製直播代碼'"
+            :title="isCodeCopied ? '已複製直播代碼' : '複製直播代碼'"
+            @click="copyJoinCode"
+          >
+            <svg
+              v-if="!isCodeCopied"
+              viewBox="0 0 24 24"
+              class="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              class="h-4 w-4 text-emerald-300"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="m5 12 4 4L19 6" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div
         v-if="remoteVideoTrackCount === 0"
