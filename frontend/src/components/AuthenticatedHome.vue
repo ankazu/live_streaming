@@ -7,7 +7,8 @@ import ChatWindow from './ChatWindow.vue'
 import JoinStreamForm from './JoinStreamForm.vue'
 import LiveKitRoom from './LiveKitRoom.vue'
 import SiteHeader from './SiteHeader.vue'
-import { getStreamByJoinCode } from '../api/streams'
+import { endStream, getStreamByJoinCode } from '../api/streams'
+import { useToast } from '../composables/useToast'
 import {
   clearWorkspaceSession,
   readWorkspaceSession,
@@ -33,6 +34,7 @@ const stageParticipantId = ref<string>()
 const participantRole = ref<'viewer' | 'guest'>('viewer')
 const isChatReady = ref(false)
 const chatWindow = ref<InstanceType<typeof ChatWindow> | null>(null)
+const { showToast } = useToast()
 const canRequestStage = computed(
   () => !isCurrentUserHost.value && participantRole.value === 'viewer',
 )
@@ -60,7 +62,16 @@ function handleWatchLive(stream: Stream) {
   viewerStream.value = stream
 }
 
-function handleLiveLeft() {
+async function handleLiveLeft() {
+  const stream = currentStream.value
+  if (stream && isCurrentUserHost.value) {
+    try {
+      await endStream(stream.id)
+    } catch {
+      showToast('目前無法結束直播，請稍後再試。', 'error')
+      return
+    }
+  }
   activeStream.value = null
   viewerStream.value = null
   stageParticipantId.value = undefined

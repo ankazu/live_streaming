@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AuthenticatedHome from '../../src/components/AuthenticatedHome.vue'
 import componentSource from '../../src/components/AuthenticatedHome.vue?raw'
+import { endStream } from '../../src/api/streams'
 import broadcasterStudioSource from '../../src/components/BroadcasterStudio.vue?raw'
 
+vi.mock('../../src/api/streams', () => ({
+  endStream: vi.fn(),
+  getStreamByJoinCode: vi.fn(),
+}))
+
 const authState = {
-  user: { displayName: 'Zhou', role: 'user', accountStatus: 'active' },
+  user: { id: 'broadcaster-1', displayName: 'Zhou', role: 'user', accountStatus: 'active' },
 }
 
 vi.mock('../../src/stores/auth/store', () => ({
@@ -16,7 +22,13 @@ vi.mock('../../src/stores/auth/store', () => ({
 
 describe('AuthenticatedHome live workspace', () => {
   beforeEach(() => {
-    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+    authState.user = {
+      id: 'broadcaster-1',
+      displayName: 'Zhou',
+      role: 'user',
+      accountStatus: 'active',
+    }
+    vi.mocked(endStream).mockReset()
   })
 
   it('does not stretch the inactive camera card to the viewport height', () => {
@@ -90,8 +102,58 @@ describe('AuthenticatedHome live workspace', () => {
     expect(wrapper.find('[data-testid="broadcaster-studio"]').exists()).toBe(true)
   })
 
+  it('ends the host stream before clearing the workspace when the host leaves', async () => {
+    vi.mocked(endStream).mockResolvedValue({} as never)
+    const wrapper = mount(AuthenticatedHome, {
+      global: {
+        stubs: {
+          SiteHeader: true,
+          CameraPreview: true,
+          LiveKitRoom: {
+            emits: ['left'],
+            template:
+              '<div data-testid="live-room"><button data-testid="leave-live" @click="$emit(\'left\')" /></div>',
+          },
+          ChatWindow: true,
+          BroadcasterStudio: {
+            emits: ['liveCreated'],
+            setup(_props, { emit }) {
+              return {
+                emit,
+                liveStream: {
+                  id: 'stream-host-1',
+                  joinCode: '482731',
+                  title: '主播直播',
+                  description: '',
+                  status: 'live',
+                  ownerId: 'broadcaster-1',
+                  viewerCount: 0,
+                  createdAt: '2026-07-29T00:00:00.000Z',
+                },
+              }
+            },
+            template:
+              '<button data-testid="start-live" @click="emit(\'liveCreated\', liveStream)" />',
+          },
+          JoinStreamForm: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="start-live"]').trigger('click')
+    await wrapper.get('[data-testid="leave-live"]').trigger('click')
+
+    expect(endStream).toHaveBeenCalledWith('stream-host-1')
+    expect(wrapper.find('[data-testid="live-room"]').exists()).toBe(false)
+  })
+
   it('returns to the camera preview when a viewer leaves the live room', async () => {
-    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+    authState.user = {
+      id: 'broadcaster-1',
+      displayName: 'Zhou',
+      role: 'user',
+      accountStatus: 'active',
+    }
     const wrapper = mount(AuthenticatedHome, {
       global: {
         stubs: {
@@ -135,7 +197,12 @@ describe('AuthenticatedHome live workspace', () => {
   })
 
   it('shows both host studio and join form for a regular user', () => {
-    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+    authState.user = {
+      id: 'broadcaster-1',
+      displayName: 'Zhou',
+      role: 'user',
+      accountStatus: 'active',
+    }
     const wrapper = mount(AuthenticatedHome, {
       global: {
         stubs: {
@@ -151,7 +218,12 @@ describe('AuthenticatedHome live workspace', () => {
     expect(wrapper.find('[data-testid="join-stream-form"]').exists()).toBe(true)
   })
   it('lets a viewer enter a join code from the right workspace panel', async () => {
-    authState.user = { displayName: 'Zhou', role: 'user', accountStatus: 'active' }
+    authState.user = {
+      id: 'broadcaster-1',
+      displayName: 'Zhou',
+      role: 'user',
+      accountStatus: 'active',
+    }
     const wrapper = mount(AuthenticatedHome, {
       global: {
         stubs: {
@@ -207,6 +279,7 @@ describe('AuthenticatedHome live workspace', () => {
   })
 
   it('wires stage requests, pending state, and role changes across the workspace', async () => {
+    authState.user = { id: 'viewer-1', displayName: 'Zhou', role: 'user', accountStatus: 'active' }
     const requestPending = ref(false)
     const hasPendingStageRequest = ref(false)
     const isChatReady = ref(true)
