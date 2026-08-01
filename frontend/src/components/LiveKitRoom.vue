@@ -16,10 +16,15 @@ const props = withDefaults(
     requestStageReady?: boolean
     requestStagePending?: boolean
     hasPendingStageRequest?: boolean
+    pendingStageRequests?: { id: string; displayName: string }[]
   }>(),
   { autoConnect: false },
 )
-const emit = defineEmits<{ left: []; requestStage: [] }>()
+const emit = defineEmits<{
+  left: []
+  requestStage: []
+  moderateStageRequest: [action: 'approve' | 'reject', requestId: string]
+}>()
 const room = ref<LiveKitRoomInstance>()
 const isConnecting = ref(false)
 const isConnected = ref(false)
@@ -292,6 +297,36 @@ onBeforeUnmount(() => {
       data-testid="live-video-surface"
       class="group relative mt-4 aspect-video min-h-48 w-full overflow-hidden rounded-xl bg-black"
     >
+      <div
+        v-if="props.pendingStageRequests?.length"
+        data-testid="stage-request-notification"
+        class="absolute top-5 left-1/2 z-30 w-[min(92%,30rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-[#2b2733]/95 p-4 text-white shadow-2xl backdrop-blur"
+      >
+        <p class="text-sm font-semibold text-white/70">上台申請</p>
+        <div
+          v-for="request in props.pendingStageRequests"
+          :key="request.id"
+          class="mt-3 flex items-center justify-between gap-3"
+        >
+          <span class="min-w-0 truncate text-sm">{{ request.displayName }}</span>
+          <div class="flex shrink-0 gap-2">
+            <button
+              class="bg-coral rounded-full px-3 py-1.5 text-xs font-semibold"
+              type="button"
+              @click="emit('moderateStageRequest', 'approve', request.id)"
+            >
+              同意上台
+            </button>
+            <button
+              class="rounded-full bg-white/10 px-3 py-1.5 text-xs hover:bg-white/20"
+              type="button"
+              @click="emit('moderateStageRequest', 'reject', request.id)"
+            >
+              拒絕
+            </button>
+          </div>
+        </div>
+      </div>
       <div
         v-if="props.joinCode && showJoinCode"
         data-testid="live-code-popup"

@@ -38,6 +38,7 @@ const canRequestStage = computed(
 )
 const requestStagePending = computed(() => chatWindow.value?.isRequestPending ?? false)
 const hasPendingStageRequest = computed(() => chatWindow.value?.hasPendingStageRequest ?? false)
+const pendingStageRequests = computed(() => chatWindow.value?.pendingStageRequests ?? [])
 
 function handleLiveCreated(stream: Stream) {
   activeStream.value = stream
@@ -72,6 +73,10 @@ function handleParticipantRoleChanged(role: 'viewer' | 'guest') {
 
 function handleRequestStage() {
   chatWindow.value?.requestToJoin()
+}
+
+function handleModerateStageRequest(action: 'approve' | 'reject', requestId: string) {
+  chatWindow.value?.moderateRequest(`participant:${action}`, requestId)
 }
 
 function handleStageChanged(participantId: string) {
@@ -141,9 +146,11 @@ onMounted(restoreWorkspace)
         :request-stage-ready="isChatReady"
         :request-stage-pending="requestStagePending"
         :has-pending-stage-request="hasPendingStageRequest"
+        :pending-stage-requests="isCurrentUserHost ? pendingStageRequests : []"
         :auto-connect="Boolean(activeStream || viewerStream)"
         @left="handleLiveLeft"
         @request-stage="handleRequestStage"
+        @moderate-stage-request="handleModerateStageRequest"
       />
       <CameraPreview v-else />
 

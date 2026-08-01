@@ -13,11 +13,11 @@ describe('ChatWindow layout', () => {
     expect(componentSource).toContain('stage:changed')
     expect(componentSource).toContain('requestToJoin')
     expect(componentSource).toContain('defineExpose')
-    expect(componentSource).toContain('同意上台')
-    expect(componentSource).toContain('拒絕')
     expect(componentSource).toContain('移除來賓')
     expect(componentSource).toContain('下舞台')
     expect(componentSource).toContain('主畫面')
+    expect(componentSource).toContain('pendingStageRequests')
+    expect(componentSource).toContain('moderateRequest')
   })
 
   it('keeps a successful stage request pending until the server resolves it', () => {

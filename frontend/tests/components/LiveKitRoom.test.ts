@@ -42,6 +42,26 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('離開直播')
   })
 
+  it('shows host stage requests as an overlay near the top center of the live surface', async () => {
+    const wrapper = mount(LiveKitRoom, {
+      props: {
+        streamId: 'stream-1',
+        pendingStageRequests: [{ id: 'request-1', displayName: 'user001' }],
+      },
+    })
+
+    const notification = wrapper.get('[data-testid="stage-request-notification"]')
+    expect(notification.classes()).toEqual(
+      expect.arrayContaining(['absolute', 'top-5', 'left-1/2', '-translate-x-1/2']),
+    )
+    expect(notification.text()).toContain('user001')
+    expect(notification.text()).toContain('同意上台')
+    expect(notification.text()).toContain('拒絕')
+
+    await notification.get('button').trigger('click')
+    expect(wrapper.emitted('moderateStageRequest')).toEqual([['approve', 'request-1']])
+  })
+
   it('keeps broadcaster camera and microphone controls inside the live video surface', () => {
     expect(componentSource).toContain('canPublish')
     expect(componentSource).toContain('setCameraEnabled')

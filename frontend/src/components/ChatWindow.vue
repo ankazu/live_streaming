@@ -204,6 +204,8 @@ defineExpose({
   hasPendingStageRequest: computed(() => hasPendingStageRequest.value),
   isRequestPending: computed(() => requestPending.value || hasPendingStageRequest.value),
   isChatReady,
+  pendingStageRequests: computed(() => pendingRequests.value),
+  moderateRequest: moderate,
   requestToJoin,
 })
 
@@ -222,35 +224,6 @@ onUnmounted(disconnect)
       </span>
     </div>
 
-    <div
-      v-if="props.canModerate && pendingRequests.length"
-      class="mt-4 space-y-2 rounded-2xl bg-white/5 p-3"
-    >
-      <p class="text-xs font-semibold text-white/60">上台申請</p>
-      <div
-        v-for="request in pendingRequests"
-        :key="request.id"
-        class="flex items-center justify-between gap-2 text-sm"
-      >
-        <span class="min-w-0 truncate">{{ request.displayName }}</span>
-        <div class="flex shrink-0 gap-2">
-          <button
-            class="bg-coral rounded-full px-3 py-1 text-xs font-semibold"
-            type="button"
-            @click="moderate('participant:approve', request.id)"
-          >
-            同意上台
-          </button>
-          <button
-            class="rounded-full bg-white/10 px-3 py-1 text-xs"
-            type="button"
-            @click="moderate('participant:reject', request.id)"
-          >
-            拒絕
-          </button>
-        </div>
-      </div>
-    </div>
     <div v-if="props.canModerate && guests.length" class="mt-3 space-y-2">
       <div class="flex flex-wrap items-center gap-2 text-xs text-white/70">
         <span>主畫面：</span>

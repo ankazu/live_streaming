@@ -200,6 +200,10 @@ describe('AuthenticatedHome live workspace', () => {
     expect(componentSource).toContain('@stage-changed="handleStageChanged"')
     expect(componentSource).toContain('ref="chatWindow"')
     expect(componentSource).toContain('@request-stage="handleRequestStage"')
+    expect(componentSource).toContain(
+      ':pending-stage-requests="isCurrentUserHost ? pendingStageRequests : []"',
+    )
+    expect(componentSource).toContain('@moderate-stage-request="handleModerateStageRequest"')
   })
 
   it('wires stage requests, pending state, and role changes across the workspace', async () => {
