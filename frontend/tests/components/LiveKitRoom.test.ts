@@ -17,7 +17,8 @@ describe('LiveKitRoom', () => {
   it('attaches already published remote tracks without duplicating subscribed tracks', () => {
     expect(componentSource).toContain('remoteParticipants.values()')
     expect(componentSource).toContain('publication.isSubscribed')
-    expect(componentSource).toContain('remoteTrackElements.get(participantIdentity)')
+    expect(componentSource).toContain('remoteTracks.set(participantIdentity, track)')
+    expect(componentSource).toContain('renderStageVideo()')
   })
 
   it('does not show a manual join button for auto-connected rooms', () => {
@@ -71,10 +72,12 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('aria-label="直播媒體控制"')
   })
 
-  it('does not render a local preview or media controls in viewer mode', () => {
-    expect(componentSource).toContain('v-if="canPublish"')
+  it('does not render a local preview or participant picture-in-picture window', () => {
+    expect(componentSource).not.toContain('local-video-container')
+    expect(componentSource).not.toContain('localVideoPreviewStyle')
+    expect(componentSource).not.toContain('right-3 bottom-3 z-10 rounded-lg')
     expect(componentSource).toContain('v-if="isConnected && canPublish"')
-    expect(componentSource).toContain('data-testid="local-video-container"')
+    expect(componentSource).toContain('只有目前 stage participant 的 video 會填滿主畫面')
   })
 
   it('keeps the live video surface constrained to its grid column', () => {
@@ -105,7 +108,7 @@ describe('LiveKitRoom', () => {
     expect(componentSource).toContain('stageParticipantId')
     expect(componentSource).toContain('remoteTracks')
     expect(componentSource).toContain('participant.identity')
-    expect(componentSource).toContain('localVideoIsStage')
+    expect(componentSource).toContain('stageVideoClass')
   })
 
   it('does not treat component cleanup as a live-room leave', () => {

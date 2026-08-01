@@ -28,6 +28,13 @@ describe('ChatWindow layout', () => {
     expect(componentSource).toContain('participant:rejected')
   })
 
+  it('handles request cooldowns and notifies the host when a guest leaves', () => {
+    expect(componentSource).toContain("result.code === 'REQUEST_COOLDOWN'")
+    expect(componentSource).toContain('申請太頻繁，請稍後再試。')
+    expect(componentSource).toContain("participant.role === 'viewer'")
+    expect(componentSource).toContain('已離開舞台')
+  })
+
   it('does not expose a duplicate canRequestStage capability', () => {
     expect(componentSource).not.toContain('canRequestStage: computed')
   })

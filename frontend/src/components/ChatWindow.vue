@@ -97,6 +97,8 @@ function connectChat() {
       participantRole.value = 'viewer'
       showToast('你已回到觀眾席。', 'info')
       emit('roleChanged', 'viewer')
+    } else if (props.canModerate && participant.role === 'viewer') {
+      showToast(`${participant.displayName} 已離開舞台。`, 'info')
     }
   })
   chatSocket.on('stage:changed', ({ participantId }: { participantId: string }) => {
@@ -155,8 +157,14 @@ function requestToJoin() {
         ? '申請中，等待主播同意。'
         : result.code === 'REQUEST_ALREADY_PENDING'
           ? '你已經送出過申請，請等待主播同意。'
-          : '目前無法申請上台。',
-      result.success || result.code === 'REQUEST_ALREADY_PENDING' ? 'info' : 'error',
+          : result.code === 'REQUEST_COOLDOWN'
+            ? '申請太頻繁，請稍後再試。'
+            : '目前無法申請上台。',
+      result.success ||
+        result.code === 'REQUEST_ALREADY_PENDING' ||
+        result.code === 'REQUEST_COOLDOWN'
+        ? 'info'
+        : 'error',
     )
   })
 }

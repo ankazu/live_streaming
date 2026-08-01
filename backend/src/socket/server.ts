@@ -197,7 +197,21 @@ export function createSocketServer(
         role: user.role,
       })
       socket.to(roomName(streamId)).emit('presence:left', { userId: user.id })
-      if (participant) socket.to(roomName(streamId)).emit('participant:left', participant)
+      if (participant) {
+        socket.to(roomName(streamId)).emit('participant:left', participant.participant)
+        if (participant.wasGuest) {
+          socket.to(roomName(streamId)).emit('participant:removed', participant.participant)
+          void streamRepository
+            .findById(streamId)
+            .then((stream) => {
+              io.to(roomName(streamId)).emit('stage:changed', {
+                streamId,
+                participantId: participantManager.getStage(streamId) ?? stream?.ownerId,
+              })
+            })
+            .catch(() => undefined)
+        }
+      }
       io.to(roomName(streamId)).emit('presence:count', { viewerCount: streamPresence?.size ?? 0 })
     }
 

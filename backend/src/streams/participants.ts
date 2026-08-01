@@ -27,6 +27,7 @@ export class ParticipantError extends Error {
 }
 
 export class ParticipantManager {
+  private static readonly REQUEST_COOLDOWN_MS = 30_000
   private readonly participants = new Map<string, Map<string, Participant>>()
   private readonly requests = new Map<string, Map<string, ParticipantRequest>>()
   private readonly stages = new Map<string, string>()
@@ -49,10 +50,15 @@ export class ParticipantManager {
     const streamParticipants = this.participants.get(streamId)
     const participant = [...(streamParticipants?.values() ?? [])].find((item) => item.socketId === socketId)
     if (!participant) return undefined
+    const wasGuest = participant.role === 'guest'
     streamParticipants?.delete(participant.userId)
     if (streamParticipants?.size === 0) this.participants.delete(streamId)
     this.cancelPendingRequest(streamId, participant.userId)
-    return participant
+    if (wasGuest) {
+      participant.role = 'viewer'
+      if (this.stages.get(streamId) === participant.userId) this.stages.delete(streamId)
+    }
+    return { participant, wasGuest }
   }
 
   requestToJoin(streamId: string, user: { id: string; displayName: string }) {
@@ -65,6 +71,15 @@ export class ParticipantManager {
       (request) => request.userId === user.id && request.status === 'pending',
     )
     if (pending) throw new ParticipantError('REQUEST_ALREADY_PENDING')
+    const recentRequest = [...streamRequests.values()]
+      .filter((request) => request.userId === user.id && request.status !== 'approved')
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+    if (
+      recentRequest &&
+      Date.now() - new Date(recentRequest.createdAt).getTime() < ParticipantManager.REQUEST_COOLDOWN_MS
+    ) {
+      throw new ParticipantError('REQUEST_COOLDOWN')
+    }
 
     const request: ParticipantRequest = {
       id: randomUUID(),

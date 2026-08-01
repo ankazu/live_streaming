@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Room, RoomEvent, Track, type Room as LiveKitRoomInstance } from 'livekit-client'
 
 import { getLiveKitToken } from '../api/livekit'
 import { useToast } from '../composables/useToast'
-import { localVideoPreviewStyle, stageVideoClass } from '../lib/livekit-layout'
+import { stageVideoClass } from '../lib/livekit-layout'
 
 const props = withDefaults(
   defineProps<{
@@ -36,17 +36,47 @@ const showJoinCode = ref(Boolean(props.joinCode))
 const isCodeCopied = ref(false)
 const remoteVideoTrackCount = ref(0)
 const remoteVideoContainer = ref<HTMLDivElement>()
-const localVideoContainer = ref<HTMLDivElement>()
 const audioContainer = ref<HTMLDivElement>()
 const remoteTracks = new Map<string, Track>()
 const remoteTrackElements = new Map<string, HTMLDivElement>()
+let localVideoTrack: Track | undefined
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined
 let isUnmounting = false
 let disconnectRequested = false
 const { showToast } = useToast()
-const localVideoIsStage = computed(() =>
-  Boolean(room.value && props.stageParticipantId === room.value.localParticipant.identity),
-)
+
+function renderStageVideo() {
+  const container = remoteVideoContainer.value
+  if (!container) return
+
+  for (const track of remoteTracks.values()) track.detach()
+  localVideoTrack?.detach()
+  container.replaceChildren()
+  remoteTrackElements.clear()
+
+  const stageIdentity = props.stageParticipantId
+  const stageTrack =
+    stageIdentity && room.value?.localParticipant.identity === stageIdentity
+      ? localVideoTrack
+      : stageIdentity
+        ? remoteTracks.get(stageIdentity)
+        : undefined
+
+  if (!stageTrack) {
+    remoteVideoTrackCount.value = 0
+    return
+  }
+
+  const wrapper = document.createElement('div')
+  wrapper.dataset.participantIdentity = stageIdentity ?? ''
+  wrapper.className = stageVideoClass()
+  const element = stageTrack.attach()
+  element.classList.add('h-full', 'w-full', 'object-contain')
+  wrapper.append(element)
+  container.append(wrapper)
+  remoteTrackElements.set(stageIdentity ?? '', wrapper)
+  remoteVideoTrackCount.value = 1
+}
 
 function attachTrack(
   track: Track,
@@ -54,18 +84,8 @@ function attachTrack(
   participantIdentity?: string,
 ) {
   if (track.kind === Track.Kind.Video && participantIdentity) {
-    const existing = remoteTrackElements.get(participantIdentity)
-    if (existing) return
-    const wrapper = document.createElement('div')
-    wrapper.dataset.participantIdentity = participantIdentity
-    wrapper.className = stageVideoClass(participantIdentity === props.stageParticipantId)
-    const element = track.attach()
-    element.classList.add('h-full', 'w-full', 'object-contain')
-    wrapper.append(element)
-    container?.append(wrapper)
     remoteTracks.set(participantIdentity, track)
-    remoteTrackElements.set(participantIdentity, wrapper)
-    remoteVideoTrackCount.value = remoteTracks.size
+    renderStageVideo()
     return
   }
   const element = track.attach()
@@ -75,17 +95,13 @@ function attachTrack(
 function detachTrack(track: Track, participantIdentity?: string) {
   track.detach().forEach((element) => element.remove())
   if (participantIdentity) {
-    remoteTrackElements.get(participantIdentity)?.remove()
-    remoteTrackElements.delete(participantIdentity)
     remoteTracks.delete(participantIdentity)
-    remoteVideoTrackCount.value = remoteTracks.size
+    renderStageVideo()
   }
 }
 
 function updateRemoteLayout() {
-  for (const [identity, element] of remoteTrackElements) {
-    element.className = stageVideoClass(identity === props.stageParticipantId)
-  }
+  renderStageVideo()
 }
 
 function attachExistingRemoteTracks(nextRoom: LiveKitRoomInstance) {
@@ -116,11 +132,13 @@ async function connect() {
     )
     nextRoom.on(RoomEvent.LocalTrackPublished, (publication) => {
       if (publication.track) {
-        const container =
-          publication.track.kind === Track.Kind.Video
-            ? localVideoContainer.value
-            : audioContainer.value
-        attachTrack(publication.track, container)
+        if (publication.track.kind === Track.Kind.Video) {
+          // 不渲染小窗；只有目前 stage participant 的 video 會填滿主畫面。
+          localVideoTrack = publication.track
+          renderStageVideo()
+        } else {
+          attachTrack(publication.track, audioContainer.value)
+        }
       }
     })
     nextRoom.on(RoomEvent.Disconnected, () => {
@@ -132,8 +150,8 @@ async function connect() {
       if (!isUnmounting && !disconnectRequested) emit('left')
     })
     await nextRoom.connect(access.url, access.token)
-    attachExistingRemoteTracks(nextRoom)
     room.value = nextRoom
+    attachExistingRemoteTracks(nextRoom)
     disconnectRequested = false
     isConnected.value = true
     if (access.canPublish) {
@@ -153,8 +171,9 @@ function disconnect() {
   room.value?.disconnect()
   remoteTracks.clear()
   remoteTrackElements.clear()
+  localVideoTrack?.detach()
+  localVideoTrack = undefined
   remoteVideoContainer.value?.replaceChildren()
-  localVideoContainer.value?.replaceChildren()
   audioContainer.value?.replaceChildren()
   room.value = undefined
   isConnected.value = false
@@ -397,19 +416,7 @@ onBeforeUnmount(() => {
         data-testid="remote-video-container"
         class="absolute inset-0 grid h-full w-full place-items-center [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-contain"
       />
-      <div
-        v-if="canPublish"
-        ref="localVideoContainer"
-        data-testid="local-video-container"
-        class="absolute overflow-hidden border-2 border-white/80 bg-black shadow-lg [&_video]:block [&_video]:h-full [&_video]:w-full [&_video]:object-cover"
-        :class="
-          localVideoIsStage
-            ? 'inset-0 z-0 rounded-none [&_video]:object-contain'
-            : 'right-3 bottom-3 z-10 rounded-lg'
-        "
-        :style="localVideoIsStage ? undefined : localVideoPreviewStyle"
-        aria-label="自己的鏡頭預覽"
-      />
+
       <div
         v-if="isConnected && canPublish"
         class="pointer-events-none absolute bottom-3 left-3 z-10 flex gap-2 rounded-full bg-black/60 p-1.5 opacity-0 backdrop-blur transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"

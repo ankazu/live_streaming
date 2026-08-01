@@ -8,6 +8,7 @@ import { createApp } from '../src/app.js'
 import { createAccessToken } from '../src/auth/token.js'
 import { UserStore } from '../src/auth/store.js'
 import { createSocketServer, getSocketCorsOrigins, notifyStreamEnded } from '../src/socket/server.js'
+import { ParticipantManager } from '../src/streams/participants.js'
 import { StreamStore } from '../src/streams/store.js'
 
 function waitForConnect(socket: Socket) {
@@ -150,6 +151,33 @@ test('viewers can request the stage and only the host can approve them', async (
   }
 })
 
+test('a guest leaving by socket is returned to viewer state and clears the stage', () => {
+  const manager = new ParticipantManager()
+  manager.join('stream-1', { id: 'host', displayName: 'Host' }, 'host-socket', true)
+  manager.join('stream-1', { id: 'guest', displayName: 'Guest' }, 'guest-socket', false)
+  const request = manager.requestToJoin('stream-1', { id: 'guest', displayName: 'Guest' })
+  manager.approve('stream-1', request.id, 'host')
+
+  const left = manager.leaveBySocket('stream-1', 'guest-socket')
+
+  assert.equal(left?.wasGuest, true)
+  assert.equal(left?.participant.role, 'viewer')
+  assert.equal(manager.getStage('stream-1'), undefined)
+})
+
+test('stage requests are rate limited after a rejected request', () => {
+  const manager = new ParticipantManager()
+  manager.join('stream-1', { id: 'host', displayName: 'Host' }, 'host-socket', true)
+  manager.join('stream-1', { id: 'viewer', displayName: 'Viewer' }, 'viewer-socket', false)
+  const request = manager.requestToJoin('stream-1', { id: 'viewer', displayName: 'Viewer' })
+  manager.reject('stream-1', request.id, 'host')
+
+  assert.throws(
+    () => manager.requestToJoin('stream-1', { id: 'viewer', displayName: 'Viewer' }),
+    (error: unknown) => error instanceof Error && error.message === 'REQUEST_COOLDOWN',
+  )
+})
+
 test('ending a stream notifies every participant in that stream', async () => {
   const users = new UserStore()
   const streams = new StreamStore()
@@ -177,7 +205,10 @@ test('ending a stream notifies every participant in that stream', async () => {
       broadcasterClient.once('stream:participant-left', resolve),
     )
     viewerClient.emit('stream:leave')
-    assert.deepEqual(await participantLeft, { userId: viewer.id, displayName: 'Audience', role: 'user' })
+    const leftParticipant = await participantLeft
+    assert.equal(leftParticipant.userId, viewer.id)
+    assert.equal(leftParticipant.displayName, 'Audience')
+    assert.equal(leftParticipant.role, 'user')
 
     await new Promise<void>((resolve) => viewerClient.emit('stream:join', stream.id, () => resolve()))
     const notifications = [broadcasterClient, viewerClient].map(
