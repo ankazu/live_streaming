@@ -41,6 +41,20 @@ describe('LiveKitRoom', () => {
       ':disabled="props.requestStagePending || props.hasPendingStageRequest"',
     )
     expect(componentSource).toContain('離開直播')
+    expect(componentSource).toContain('canLeaveStage?: boolean')
+    expect(componentSource).toContain('data-testid="participant-leave-stage"')
+  })
+
+  it('renders host stage selection and guest removal controls in the live room header', () => {
+    expect(componentSource).toContain('stageGuests?:')
+    expect(componentSource).toContain('hostParticipantId?: string')
+    expect(componentSource).toContain('hostParticipantName?: string')
+    expect(componentSource).toContain("emit('removeGuest'")
+    expect(componentSource).toContain('主畫面：')
+    expect(componentSource).toContain('退出來賓')
+    expect(componentSource).toContain('text-[11px]')
+    expect(componentSource).not.toContain("emit('changeStage'")
+    expect(componentSource).not.toContain('>\n          主播\n        </button>')
   })
 
   it('shows host stage requests as an overlay near the top center of the live surface', async () => {
@@ -123,6 +137,9 @@ describe('LiveKitRoom', () => {
     })
 
     expect(wrapper.get('[data-testid="live-code-popup"]').text()).toContain('482731')
+    expect(wrapper.get('[data-testid="live-code-popup"]').classes()).toEqual(
+      expect.arrayContaining(['top-3', 'left-3']),
+    )
     await wrapper.get('[data-testid="live-code-close"]').trigger('click')
     expect(wrapper.find('[data-testid="live-code-popup"]').exists()).toBe(false)
     await wrapper.get('[data-testid="live-code-toggle"]').trigger('click')

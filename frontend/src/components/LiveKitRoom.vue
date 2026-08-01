@@ -17,6 +17,10 @@ const props = withDefaults(
     requestStagePending?: boolean
     hasPendingStageRequest?: boolean
     pendingStageRequests?: { id: string; displayName: string }[]
+    stageGuests?: { userId: string; displayName: string }[]
+    hostParticipantId?: string
+    hostParticipantName?: string
+    canLeaveStage?: boolean
   }>(),
   { autoConnect: false },
 )
@@ -24,6 +28,8 @@ const emit = defineEmits<{
   left: []
   requestStage: []
   moderateStageRequest: [action: 'approve' | 'reject', requestId: string]
+  removeGuest: [userId: string]
+  leaveStage: []
 }>()
 const room = ref<LiveKitRoomInstance>()
 const isConnecting = ref(false)
@@ -295,6 +301,36 @@ onBeforeUnmount(() => {
               : '申請上台'
         }}
       </button>
+      <div v-if="props.stageGuests?.length" class="flex flex-wrap items-center gap-2">
+        <span class="text-xs text-white/60">
+          主畫面：
+          <strong class="font-normal text-white">{{
+            props.stageParticipantId === props.hostParticipantId
+              ? props.hostParticipantName
+              : props.stageGuests.find((guest) => guest.userId === props.stageParticipantId)
+                  ?.displayName
+          }}</strong>
+        </span>
+        <div v-for="guest in props.stageGuests" :key="guest.userId">
+          <button
+            class="rounded-full bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20"
+            type="button"
+            :aria-label="`退出${guest.displayName}來賓`"
+            @click="emit('removeGuest', guest.userId)"
+          >
+            退出來賓
+          </button>
+        </div>
+      </div>
+      <button
+        v-if="props.canLeaveStage && isConnected"
+        data-testid="participant-leave-stage"
+        class="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+        type="button"
+        @click="emit('leaveStage')"
+      >
+        下舞台
+      </button>
       <button
         v-if="!props.autoConnect && !isConnected"
         class="bg-coral rounded-full px-4 py-2 text-sm font-semibold disabled:opacity-50"
@@ -349,7 +385,7 @@ onBeforeUnmount(() => {
       <div
         v-if="props.joinCode && showJoinCode"
         data-testid="live-code-popup"
-        class="absolute bottom-20 left-3 z-20 w-44 rounded-xl border border-white/15 bg-[#2b2733]/95 p-3 shadow-xl backdrop-blur"
+        class="absolute top-3 left-3 z-20 w-44 rounded-xl border border-white/15 bg-[#2b2733]/95 p-3 shadow-xl backdrop-blur"
       >
         <div class="flex items-center justify-between gap-2">
           <p class="text-xs text-white/60">直播代碼</p>

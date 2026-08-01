@@ -181,17 +181,6 @@ function removeGuest(userId: string) {
   })
 }
 
-function changeStage(participantId: string) {
-  socket.value?.emit('stage:change', participantId, (result: { success: boolean }) => {
-    if (!result.success) {
-      showToast('目前無法切換舞台畫面。', 'error')
-      return
-    }
-    stageParticipantId.value = participantId
-    emit('stageChanged', participantId)
-  })
-}
-
 function leaveStage() {
   socket.value?.emit('participant:leave-stage', (result: { success: boolean }) => {
     if (!result.success) showToast('目前無法下舞台，請稍後再試。', 'error')
@@ -213,7 +202,10 @@ defineExpose({
   isRequestPending: computed(() => requestPending.value || hasPendingStageRequest.value),
   isChatReady,
   pendingStageRequests: computed(() => pendingRequests.value),
+  stageGuests: computed(() => guests.value),
+  leaveStage,
   moderateRequest: moderate,
+  removeGuest,
   requestToJoin,
 })
 
@@ -232,53 +224,6 @@ onUnmounted(disconnect)
       </span>
     </div>
 
-    <div v-if="props.canModerate && guests.length" class="mt-3 space-y-2">
-      <div class="flex flex-wrap items-center gap-2 text-xs text-white/70">
-        <span>主畫面：</span>
-        <button
-          class="rounded-full px-3 py-1"
-          :class="stageParticipantId === props.userId ? 'bg-coral text-white' : 'bg-white/10'"
-          type="button"
-          @click="props.userId && changeStage(props.userId)"
-        >
-          主播
-        </button>
-        <button
-          v-for="guest in guests"
-          :key="`stage-${guest.userId}`"
-          class="rounded-full px-3 py-1"
-          :class="stageParticipantId === guest.userId ? 'bg-coral text-white' : 'bg-white/10'"
-          type="button"
-          @click="changeStage(guest.userId)"
-        >
-          {{ guest.displayName }}
-        </button>
-      </div>
-      <div
-        v-for="guest in guests"
-        :key="guest.userId"
-        class="flex items-center justify-between gap-2 text-xs text-white/70"
-      >
-        <span class="truncate">舞台來賓：{{ guest.displayName }}</span>
-        <button
-          class="rounded-full bg-white/10 px-3 py-1 hover:bg-white/20"
-          type="button"
-          @click="removeGuest(guest.userId)"
-        >
-          移除來賓
-        </button>
-      </div>
-    </div>
-    <div v-if="!props.canModerate && participantRole === 'guest'" class="mt-4">
-      <button
-        data-testid="participant-leave-stage"
-        class="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-        type="button"
-        @click="leaveStage"
-      >
-        下舞台
-      </button>
-    </div>
     <div class="mt-5 max-h-[353px] min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto text-sm">
       <p v-for="message in messages" :key="message.id" class="break-words">
         <strong class="text-coral">{{ message.displayName }}</strong> {{ message.content }}

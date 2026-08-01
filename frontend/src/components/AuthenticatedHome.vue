@@ -39,6 +39,8 @@ const canRequestStage = computed(
 const requestStagePending = computed(() => chatWindow.value?.isRequestPending ?? false)
 const hasPendingStageRequest = computed(() => chatWindow.value?.hasPendingStageRequest ?? false)
 const pendingStageRequests = computed(() => chatWindow.value?.pendingStageRequests ?? [])
+const stageGuests = computed(() => chatWindow.value?.stageGuests ?? [])
+const canLeaveStage = computed(() => !isCurrentUserHost.value && participantRole.value === 'guest')
 
 function handleLiveCreated(stream: Stream) {
   activeStream.value = stream
@@ -77,6 +79,14 @@ function handleRequestStage() {
 
 function handleModerateStageRequest(action: 'approve' | 'reject', requestId: string) {
   chatWindow.value?.moderateRequest(`participant:${action}`, requestId)
+}
+
+function handleRemoveGuest(userId: string) {
+  chatWindow.value?.removeGuest(userId)
+}
+
+function handleLeaveStage() {
+  chatWindow.value?.leaveStage()
 }
 
 function handleStageChanged(participantId: string) {
@@ -147,10 +157,16 @@ onMounted(restoreWorkspace)
         :request-stage-pending="requestStagePending"
         :has-pending-stage-request="hasPendingStageRequest"
         :pending-stage-requests="isCurrentUserHost ? pendingStageRequests : []"
+        :stage-guests="isCurrentUserHost ? stageGuests : []"
+        :host-participant-id="currentStream.ownerId"
+        :host-participant-name="isCurrentUserHost ? auth.user?.displayName : undefined"
+        :can-leave-stage="canLeaveStage"
         :auto-connect="Boolean(activeStream || viewerStream)"
         @left="handleLiveLeft"
         @request-stage="handleRequestStage"
         @moderate-stage-request="handleModerateStageRequest"
+        @remove-guest="handleRemoveGuest"
+        @leave-stage="handleLeaveStage"
       />
       <CameraPreview v-else />
 
