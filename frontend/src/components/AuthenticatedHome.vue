@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import BroadcasterStudio from './BroadcasterStudio.vue'
 import CameraPreview from './CameraPreview.vue'
@@ -7,12 +7,23 @@ import ChatWindow from './ChatWindow.vue'
 import JoinStreamForm from './JoinStreamForm.vue'
 import LiveKitRoom from './LiveKitRoom.vue'
 import SiteHeader from './SiteHeader.vue'
+import { getStreamByJoinCode } from '../api/streams'
+import {
+  clearWorkspaceSession,
+  readWorkspaceSession,
+  writeWorkspaceSession,
+} from '../lib/workspace-session'
 import type { Stream } from '../types/stream'
 import { useAuthStore } from '../stores/auth/store'
 
 const auth = useAuthStore()
-const activeStream = ref<Stream | null>(null)
-const viewerStream = ref<Stream | null>(null)
+const savedWorkspace = readWorkspaceSession()
+const activeStream = ref<Stream | null>(
+  savedWorkspace?.mode === 'host' ? savedWorkspace.stream : null,
+)
+const viewerStream = ref<Stream | null>(
+  savedWorkspace?.mode === 'viewer' ? savedWorkspace.stream : null,
+)
 const currentStream = computed(() => activeStream.value ?? viewerStream.value)
 const isCurrentUserHost = computed(() =>
   Boolean(currentStream.value && auth.user?.id === currentStream.value.ownerId),
@@ -66,6 +77,36 @@ function handleRequestStage() {
 function handleStageChanged(participantId: string) {
   stageParticipantId.value = participantId
 }
+
+async function restoreWorkspace() {
+  if (!savedWorkspace) return
+
+  try {
+    const stream = await getStreamByJoinCode(savedWorkspace.stream.joinCode)
+    if (savedWorkspace.mode === 'host') {
+      if (stream.ownerId !== auth.user?.id) {
+        handleLiveLeft()
+        return
+      }
+      handleLiveCreated(stream)
+      return
+    }
+    handleWatchLive(stream)
+  } catch {
+    handleLiveLeft()
+  }
+}
+
+watch([activeStream, viewerStream], ([nextActiveStream, nextViewerStream]) => {
+  const stream = nextActiveStream ?? nextViewerStream
+  if (!stream) {
+    clearWorkspaceSession()
+    return
+  }
+  writeWorkspaceSession(sessionStorage, nextActiveStream ? 'host' : 'viewer', stream)
+})
+
+onMounted(restoreWorkspace)
 </script>
 
 <template>
